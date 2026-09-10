@@ -40,7 +40,12 @@ for (const dir of readdirSync(parent)) {
 }
 
 await build({
-  entry: { [`${short}-baseline`]: join(root, "src/index.ts") },
+  // Never load the package's own tsdown.config.ts: its `deps.neverBundle` /
+  // `external` settings would keep the siblings external.
+  config: false,
+  // A package may provide tests/baseline/entry.ts to widen the bundle surface
+  // (e.g. expose an inlined dependency's global store to the differential).
+  entry: { [`${short}-baseline`]: existsSync(join(outDir, "entry.ts")) ? join(outDir, "entry.ts") : join(root, "src/index.ts") },
   outDir,
   format: ["esm"],
   dts: false,
