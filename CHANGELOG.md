@@ -2,7 +2,25 @@
 
 ## 1.0.0-beta.1
 
-Extracted from the [`paritytech/bcts`](https://github.com/paritytech/bcts) monorepo, where this library was published as `@bcts/shamir`. The public API is unchanged; see [MIGRATION.md](./MIGRATION.md).
+Extracted from the [`paritytech/bcts`](https://github.com/paritytech/bcts)
+monorepo (`@bcts/shamir`) and redesigned as an idiomatic TypeScript library;
+see [MIGRATION.md](./MIGRATION.md). Every share byte is unchanged.
+
+- `splitSecret(secret, { threshold, shareCount, rng? })` returns
+  `ShamirShare[]` (`{ index, data }`); `recoverSecret(shares)` takes the
+  same. `rng` defaults to the secure generator.
+- One `ShamirError` with `code: "SecretTooLong" | "TooManyShares" |
+  "ChecksumFailure" | "SecretTooShort" | "SecretNotEvenLen" |
+  "InvalidThreshold" | "SharesUnequalLength"` and factories;
+  `ShamirErrorType`, `ShamirResult` and the unreachable
+  `InterpolationFailure` removed.
+- `MIN_SECRET_LENGTH` / `MAX_SECRET_LENGTH` spell the word out.
+- Interpolation uses a per-call scratch arena and register-local
+  multiplication; the digest comparison is constant-time; every scratch
+  buffer is zeroed.
+- 734 golden vectors, a differential corpus against the frozen pre-redesign
+  bundle, and a Rust cross-validation harness (`tests/rust-validation`,
+  `bc-shamir 0.13.0`: 734/734 match, error variants included).
 
 ---
 

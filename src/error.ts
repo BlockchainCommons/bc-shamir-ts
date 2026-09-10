@@ -1,81 +1,72 @@
 /**
- * Copyright © 2023-2026 Blockchain Commons, LLC
- * Copyright © 2025-2026 Parity Technologies
+ * The single error type thrown by this package.
  *
+ * @module error
  */
 
-// Ported from bc-shamir-rust/src/error.rs
+/** Machine-readable discriminant for a {@link ShamirError}. */
+export type ShamirErrorCode =
+  | "SecretTooLong"
+  | "TooManyShares"
+  | "ChecksumFailure"
+  | "SecretTooShort"
+  | "SecretNotEvenLen"
+  | "InvalidThreshold"
+  | "SharesUnequalLength";
+
+const MESSAGES: Record<ShamirErrorCode, string> = {
+  SecretTooLong: "secret is too long",
+  TooManyShares: "too many shares",
+  ChecksumFailure: "checksum failure",
+  SecretTooShort: "secret is too short",
+  SecretNotEvenLen: "secret is not of even length",
+  InvalidThreshold: "invalid threshold",
+  SharesUnequalLength: "shares have unequal length",
+};
+
+const captureStackTrace = (
+  Error as unknown as { captureStackTrace?: (target: object, ctor: unknown) => void }
+).captureStackTrace;
 
 /**
- * Error types for Shamir secret sharing operations.
- *
- * Each variant mirrors a corresponding `Error::*` enum in
- * `bc-shamir-rust/src/error.rs` with the same trigger conditions and the
- * same default `Display` strings.
- *
- * Note on `InterpolationFailure`: this variant is **reserved but
- * unreachable** in both the Rust and TypeScript implementations.
- * `interpolate()` in `interpolate.ts` never actually returns / throws an
- * interpolation failure today — the Lagrange-basis math always succeeds
- * for any well-formed input. The variant is kept for forward
- * compatibility (e.g. should a future revision add input validation that
- * could reject pathological cases) and to keep the TS error type a 1:1
- * mirror of Rust's `Error` enum.
- */
-export enum ShamirErrorType {
-  SecretTooLong = "SecretTooLong",
-  TooManyShares = "TooManyShares",
-  /**
-   * Reserved / unreachable in both Rust and TS today. See enum doc above.
-   */
-  InterpolationFailure = "InterpolationFailure",
-  ChecksumFailure = "ChecksumFailure",
-  SecretTooShort = "SecretTooShort",
-  SecretNotEvenLen = "SecretNotEvenLen",
-  InvalidThreshold = "InvalidThreshold",
-  SharesUnequalLength = "SharesUnequalLength",
-}
-
-/**
- * Error class for Shamir secret sharing operations.
+ * Thrown for invalid split parameters, malformed share sets, and a failed
+ * recovery checksum. Branch on `code`; messages are for humans.
  */
 export class ShamirError extends Error {
-  readonly type: ShamirErrorType;
+  readonly code: ShamirErrorCode;
 
-  constructor(type: ShamirErrorType, message?: string) {
-    super(message ?? ShamirError.defaultMessage(type));
-    this.type = type;
+  constructor(code: ShamirErrorCode, message: string = MESSAGES[code]) {
+    super(message);
     this.name = "ShamirError";
+    this.code = code;
+    Object.setPrototypeOf(this, new.target.prototype);
+    if (typeof captureStackTrace === "function") captureStackTrace(this, ShamirError);
   }
 
-  private static defaultMessage(type: ShamirErrorType): string {
-    switch (type) {
-      case ShamirErrorType.SecretTooLong:
-        return "secret is too long";
-      case ShamirErrorType.TooManyShares:
-        return "too many shares";
-      case ShamirErrorType.InterpolationFailure:
-        return "interpolation failed";
-      case ShamirErrorType.ChecksumFailure:
-        return "checksum failure";
-      case ShamirErrorType.SecretTooShort:
-        return "secret is too short";
-      case ShamirErrorType.SecretNotEvenLen:
-        return "secret is not of even length";
-      case ShamirErrorType.InvalidThreshold:
-        return "invalid threshold";
-      case ShamirErrorType.SharesUnequalLength:
-        return "shares have unequal length";
-    }
+  static isShamirError(value: unknown): value is ShamirError {
+    return value instanceof ShamirError;
+  }
+
+  static secretTooLong(): ShamirError {
+    return new ShamirError("SecretTooLong");
+  }
+  static tooManyShares(): ShamirError {
+    return new ShamirError("TooManyShares");
+  }
+  /** The recovered digest does not match: wrong, missing, or corrupted shares. */
+  static checksumFailure(): ShamirError {
+    return new ShamirError("ChecksumFailure");
+  }
+  static secretTooShort(): ShamirError {
+    return new ShamirError("SecretTooShort");
+  }
+  static secretNotEvenLen(): ShamirError {
+    return new ShamirError("SecretNotEvenLen");
+  }
+  static invalidThreshold(): ShamirError {
+    return new ShamirError("InvalidThreshold");
+  }
+  static sharesUnequalLength(): ShamirError {
+    return new ShamirError("SharesUnequalLength");
   }
 }
-
-/**
- * Mirrors Rust's `Result<T, Error>` for API parity.
- *
- * The TypeScript port surfaces failures by throwing `ShamirError`
- * instances rather than returning a sum type, so this alias is a no-op
- * (`ShamirResult<T>` ≡ `T`). It is kept so signatures published in
- * `@blockchaincommons/shamir` remain visually parallel to their Rust counterparts.
- */
-export type ShamirResult<T> = T;

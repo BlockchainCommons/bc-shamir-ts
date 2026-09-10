@@ -25,15 +25,19 @@ bun add @blockchaincommons/shamir
 ## Usage Instructions
 
 ```typescript
-import {
-  ShamirError,
-  ShamirErrorType,
-  splitSecret,
-  recoverSecret,
-  MIN_SECRET_LEN,
-  MAX_SECRET_LEN,
-  MAX_SHARE_COUNT,
-} from "@blockchaincommons/shamir";
+import { splitSecret, recoverSecret, ShamirError } from "@blockchaincommons/shamir";
+
+const secret = new TextEncoder().encode("my secret belongs to me."); // 16–32 bytes, even
+const shares = splitSecret(secret, { threshold: 2, shareCount: 3 }); // secure RNG by default
+// shares[i] is { index: i, data: Uint8Array }
+
+const recovered = recoverSecret([shares[0], shares[2]]);
+
+try {
+  recoverSecret([shares[0], { index: 1, data: new Uint8Array(24) }]);
+} catch (e) {
+  if (ShamirError.isShamirError(e)) console.log(e.code); // "ChecksumFailure"
+}
 ```
 
 Runnable examples live in the [`examples/`](https://github.com/BlockchainCommons/bc-shamir-ts/tree/master/examples) directory.
@@ -44,7 +48,7 @@ Runnable examples live in the [`examples/`](https://github.com/BlockchainCommons
 
 ### Version History
 
-- **1.0.0-beta.1 (September 9, 2026)** - Initial beta release, extracted from the [`paritytech/bcts`](https://github.com/paritytech/bcts) monorepo.
+- **1.0.0-beta.1 (September 9, 2026)** - Initial beta release, extracted from the [`paritytech/bcts`](https://github.com/paritytech/bcts) monorepo and redesigned as an idiomatic TypeScript library ([MIGRATION.md](./MIGRATION.md)). Share bytes are unchanged and cross-validated against `bc-shamir 0.13.0`.
 
 ### Roadmap
 

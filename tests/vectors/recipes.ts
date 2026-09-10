@@ -4,7 +4,7 @@
  * so the same recipe drives the golden file, the differential and the Rust
  * harness. Adapters bridge the pre- and post-redesign surfaces.
  */
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 export type Bytes = { hex: string } | { cycle: number; start?: number } | { text: string };
 /** Seeded xoshiro state (four decimal u64 strings) or the counter "fake" generator (0, 17, 34, …). */

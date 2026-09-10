@@ -7,48 +7,59 @@
 import { RandomNumberGenerator } from '@blockchaincommons/rand';
 
 // @public
-export const MAX_SECRET_LEN = 32;
+export const MAX_SECRET_LENGTH = 32;
 
 // @public
 export const MAX_SHARE_COUNT = 16;
 
 // @public
-export const MIN_SECRET_LEN = 16;
+export const MIN_SECRET_LENGTH = 16;
 
 // @public
-export function recoverSecret(indexes: number[], shares: Uint8Array[]): Uint8Array;
+export function recoverSecret(shares: readonly ShamirShare[]): Uint8Array<ArrayBuffer>;
 
 // @public
 export class ShamirError extends Error {
-    constructor(type: ShamirErrorType, message?: string);
+    constructor(code: ShamirErrorCode, message?: string);
+    static checksumFailure(): ShamirError;
     // (undocumented)
-    readonly type: ShamirErrorType;
+    readonly code: ShamirErrorCode;
+    // (undocumented)
+    static invalidThreshold(): ShamirError;
+    // (undocumented)
+    static isShamirError(value: unknown): value is ShamirError;
+    // (undocumented)
+    static secretNotEvenLen(): ShamirError;
+    // (undocumented)
+    static secretTooLong(): ShamirError;
+    // (undocumented)
+    static secretTooShort(): ShamirError;
+    // (undocumented)
+    static sharesUnequalLength(): ShamirError;
+    // (undocumented)
+    static tooManyShares(): ShamirError;
 }
 
 // @public
-export enum ShamirErrorType {
+export type ShamirErrorCode = "SecretTooLong" | "TooManyShares" | "ChecksumFailure" | "SecretTooShort" | "SecretNotEvenLen" | "InvalidThreshold" | "SharesUnequalLength";
+
+// @public
+export interface ShamirShare {
     // (undocumented)
-    ChecksumFailure = "ChecksumFailure",
-    InterpolationFailure = "InterpolationFailure",
+    readonly data: Uint8Array;
     // (undocumented)
-    InvalidThreshold = "InvalidThreshold",
-    // (undocumented)
-    SecretNotEvenLen = "SecretNotEvenLen",
-    // (undocumented)
-    SecretTooLong = "SecretTooLong",
-    // (undocumented)
-    SecretTooShort = "SecretTooShort",
-    // (undocumented)
-    SharesUnequalLength = "SharesUnequalLength",
-    // (undocumented)
-    TooManyShares = "TooManyShares"
+    readonly index: number;
 }
 
 // @public
-export type ShamirResult<T> = T;
+export interface SplitOptions {
+    readonly rng?: RandomNumberGenerator | undefined;
+    readonly shareCount: number;
+    readonly threshold: number;
+}
 
 // @public
-export function splitSecret(threshold: number, shareCount: number, secret: Uint8Array, randomGenerator: RandomNumberGenerator): Uint8Array[];
+export function splitSecret(secret: Uint8Array, options: SplitOptions): ShamirShare[];
 
 // (No @packageDocumentation comment for this package)
 

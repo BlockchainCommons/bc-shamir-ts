@@ -19,21 +19,34 @@ differs from the Rust reference. It has three kinds of entry:
 
 ## 1. True behavioral divergences
 
-_None recorded yet for the extraction release. The port was byte-compatible with
-the Rust reference at the tracked version when it was extracted from the
-`paritytech/bcts` monorepo._
-
-> Any divergence found after extraction must be added here in the same commit
-> that introduces or discovers it, with the input, the Rust outcome, the
-> TypeScript outcome, and the reason the difference is intentional.
+_None._ All 734 golden vectors (`tests/vectors/vectors.json`), including
+the error variant of every failing recipe, replay exactly against
+`bc-shamir 0.13.0` through `tests/rust-validation`
+(`cargo run --release -- ../vectors/vectors.json`).
 
 ## 2. JS-only input domain
 
-_To be documented as the surface is audited._
+- **Share indexes.** Rust takes `usize` indexes and narrows them to `u8`;
+  TypeScript takes `number` and narrows the same way through
+  `Uint8Array.from`. Neither validates the range; an index ≥ 254 collides
+  with the digest/secret x-coordinates in both.
+- **`InterpolationFailure`.** Rust's `Error` enum keeps the variant;
+  neither implementation can produce it. Dropped from the TypeScript code
+  union (surface-only difference).
 
 ## 3. Mapping equivalences
 
-_To be documented as the surface is audited._
+- **API shape.** `split_secret(t, n, &secret, &mut rng)` ↔
+  `splitSecret(secret, { threshold, shareCount, rng })`;
+  `recover_secret(&indexes, &shares)` ↔ `recoverSecret(shares)` with
+  `{ index, data }` objects. The harness unzips the objects.
+- **Errors.** `Err(Error::ChecksumFailure)` ↔ `ShamirError` with
+  `code: "ChecksumFailure"`; vectors store `throw:<variant>` and the harness
+  compares `format!("{:?}", e)` to it.
+- **RNG.** Rust's `&mut impl RandomNumberGenerator` ↔ `{ rng }`; the
+  harness drives `bc-rand`'s `SeededRandomNumberGenerator` from the same
+  xoshiro state, and the crate tests' counter generator (0, 17, 34, …) is
+  reproduced as "fake".
 
 ## Maintenance
 

@@ -1,71 +1,95 @@
 # Migrating from `@bcts/shamir` to `@blockchaincommons/shamir`
 
-`@blockchaincommons/shamir` is the canonical home of this library. It was extracted from the
-[`paritytech/bcts`](https://github.com/paritytech/bcts) monorepo, where it was
-published as `@bcts/shamir`, into its own Blockchain Commons repository at
-[`BlockchainCommons/bc-shamir-ts`](https://github.com/BlockchainCommons/bc-shamir-ts).
+`@blockchaincommons/shamir` is the canonical home of this library. It was
+extracted from the [`paritytech/bcts`](https://github.com/paritytech/bcts)
+monorepo, where it was published as `@bcts/shamir`, into its own Blockchain
+Commons repository at
+[`BlockchainCommons/bc-shamir-ts`](https://github.com/BlockchainCommons/bc-shamir-ts),
+and redesigned as an idiomatic TypeScript library in the same release.
 
-For the extraction release, **`1.0.0-beta.1`, the public API is unchanged.** The
-migration is a rename. `@bcts/shamir` remains published for one beta cycle as a
-thin re-export of this package, so nothing breaks the moment you update.
+**Every share byte is unchanged.** Share values, index assignment, the RNG
+draw order and the checksum are byte-identical to `@bcts/shamir` and to the
+Rust reference `bc-shamir 0.13.0`; 734 golden vectors, a differential corpus
+of ~5 400 recipes against the frozen pre-redesign bundle, and a Rust
+cross-validation harness enforce that. What changed is the shape of the API.
 
 ## TL;DR checklist
 
 - [ ] Replace the `@bcts/shamir` dependency with `@blockchaincommons/shamir`.
 - [ ] Rewrite import specifiers: `@bcts/shamir` becomes `@blockchaincommons/shamir`.
-- [ ] Raise your Node floor to **22.12**.
-- [ ] Ensure TypeScript **>= 5.7** to consume the published types.
-- [ ] If you relied on the `browser` field or a global-script build, switch to the ESM or CJS entry point.
+- [ ] `splitSecret(threshold, shareCount, secret, rng)` →
+      `splitSecret(secret, { threshold, shareCount, rng })`, returning
+      `ShamirShare[]` (`{ index, data }`).
+- [ ] `recoverSecret(indexes, shares)` → `recoverSecret(shares)` with
+      `ShamirShare` objects.
+- [ ] `ShamirErrorType.X` / `error.type` → the string `"X"` / `error.code`;
+      `ShamirResult` is gone.
+- [ ] `MIN_SECRET_LEN` / `MAX_SECRET_LEN` → `MIN_SECRET_LENGTH` / `MAX_SECRET_LENGTH`.
+- [ ] Raise your Node floor to **22.12** and TypeScript to **>= 5.7**.
 
 ## 1. Package name and imports
 
 ```diff
-- import { /* ... */ } from "@bcts/shamir";
-+ import { /* ... */ } from "@blockchaincommons/shamir";
+- import { splitSecret } from "@bcts/shamir";
++ import { splitSecret } from "@blockchaincommons/shamir";
 ```
+
+## 2. Shares carry their index
 
 ```diff
-  "dependencies": {
--   "@bcts/shamir": "^1.0.0-beta.6"
-+   "@blockchaincommons/shamir": "^1.0.0-beta.1"
-  }
+- const shares = splitSecret(3, 5, secret, rng);           // Uint8Array[]
+- const secret2 = recoverSecret([1, 2, 4], [shares[1], shares[2], shares[4]]);
++ const shares = splitSecret(secret, { threshold: 3, shareCount: 5, rng }); // ShamirShare[]
++ const secret2 = recoverSecret([shares[1], shares[2], shares[4]]);
 ```
 
-## 2. Version numbering restarts
+`ShamirShare` is `{ readonly index: number; readonly data: Uint8Array }`.
+`shares[i].index === i` and `shares[i].data` holds exactly the bytes the
+old API returned at position `i`. `rng` is optional and defaults to the
+secure generator from `@blockchaincommons/rand`; pass a `SeededRng` for
+reproducible splits.
 
-`@bcts/shamir` versions moved in lockstep with every other package in the
-monorepo, which is why it reached `1.0.0-beta.6`. Each extracted package now
-versions independently and starts again at `1.0.0-beta.1`. A lower version
-number here does **not** mean older code.
+## 3. Errors
 
-## 3. Node and TypeScript floors moved up
+One class, `ShamirError`, with a `code` union:
 
-| | `@bcts/shamir` | `@blockchaincommons/shamir` |
-|---|---|---|
-| Node | `>= 18` | `>= 22.12` |
-| TypeScript (consumers) | 6.x | `>= 5.7` |
+```ts
+try {
+  recoverSecret(shares);
+} catch (e) {
+  if (ShamirError.isShamirError(e) && e.code === "ChecksumFailure") {
+    /* wrong, missing or altered shares */
+  }
+}
+```
 
-## 4. The IIFE / global-script build is gone
+| `@bcts/shamir` | `@blockchaincommons/shamir` |
+| --- | --- |
+| `error.type === ShamirErrorType.ChecksumFailure` | `error.code === "ChecksumFailure"` |
+| `new ShamirError(ShamirErrorType.X)` | `ShamirError.x()` factories, e.g. `ShamirError.checksumFailure()` |
+| `ShamirErrorType.InterpolationFailure` | removed (unreachable in both implementations) |
+| `ShamirResult<T>` | removed (`T`) |
 
-`@bcts/shamir` shipped an additional IIFE bundle exposed through the `browser`
-field. That build is dropped: IIFE entry points cannot share chunks, which forks
-module-level singletons across entry points. Use the ESM entry (`import`) or the
-CJS entry (`require`); both are declared in `exports` and validated in CI by
-`publint` and `@arethetypeswrong/cli`.
+Messages are unchanged. Validation order is unchanged: `TooManyShares`,
+`InvalidThreshold`, `SecretTooLong`, `SecretTooShort`, `SecretNotEvenLen`,
+then `SharesUnequalLength` on recovery.
 
-## 5. Peer packages renamed too
+## 4. Renames
 
-Every sibling library moved from the `@bcts` scope to `@blockchaincommons`. If
-you depend on more than one, rename them together so a single copy of each
-shared type is resolved:
+| `@bcts/shamir` | `@blockchaincommons/shamir` |
+| --- | --- |
+| `MIN_SECRET_LEN` | `MIN_SECRET_LENGTH` |
+| `MAX_SECRET_LEN` | `MAX_SECRET_LENGTH` |
+| `MAX_SHARE_COUNT` | unchanged |
 
-| Old | New |
-|---|---|
-| `@bcts/dcbor` | `@blockchaincommons/dcbor` |
-| `@bcts/<name>` | `@blockchaincommons/<name>` |
+## 5. Node and TypeScript floors
+
+Node **22.12** and TypeScript **5.7**. The IIFE / global-script build is
+gone; use the ESM or CJS entry.
 
 ## 6. What did not change
 
-- The public API: every exported name, signature and type is identical.
-- The wire format. Encodings produced by `@bcts/shamir` decode here, and the reverse.
-- Parity with the Rust reference implementation. See [`RUST_DIVERGENCES.md`](./RUST_DIVERGENCES.md).
+- Share bytes, share indexes, the digest share (index 254) and secret
+  (index 255) layout, the four-byte HMAC-SHA-256 checksum, and the RNG
+  draw order (`threshold − 2` whole shares, then `length − 4` bytes).
+- `threshold === 1` returns copies of the secret and draws no randomness.

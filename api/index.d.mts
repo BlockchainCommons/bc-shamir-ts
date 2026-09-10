@@ -1,134 +1,81 @@
 import { RandomNumberGenerator } from "@blockchaincommons/rand";
-//#region src/error.d.ts
+//#region src/constants.d.ts
 /**
- * Copyright © 2023-2026 Blockchain Commons, LLC
- * Copyright © 2025-2026 Parity Technologies
+ * Limits shared by split and recover. They are wire: SSKR shares carry
+ * secrets within these bounds and nothing else.
  *
+ * @module constants
  */
-/**
- * Error types for Shamir secret sharing operations.
- *
- * Each variant mirrors a corresponding `Error::*` enum in
- * `bc-shamir-rust/src/error.rs` with the same trigger conditions and the
- * same default `Display` strings.
- *
- * Note on `InterpolationFailure`: this variant is **reserved but
- * unreachable** in both the Rust and TypeScript implementations.
- * `interpolate()` in `interpolate.ts` never actually returns / throws an
- * interpolation failure today — the Lagrange-basis math always succeeds
- * for any well-formed input. The variant is kept for forward
- * compatibility (e.g. should a future revision add input validation that
- * could reject pathological cases) and to keep the TS error type a 1:1
- * mirror of Rust's `Error` enum.
- */
-declare enum ShamirErrorType {
-  SecretTooLong = "SecretTooLong",
-  TooManyShares = "TooManyShares",
-  /**
-   * Reserved / unreachable in both Rust and TS today. See enum doc above.
-   */
-  InterpolationFailure = "InterpolationFailure",
-  ChecksumFailure = "ChecksumFailure",
-  SecretTooShort = "SecretTooShort",
-  SecretNotEvenLen = "SecretNotEvenLen",
-  InvalidThreshold = "InvalidThreshold",
-  SharesUnequalLength = "SharesUnequalLength"
-}
-/**
- * Error class for Shamir secret sharing operations.
- */
-declare class ShamirError extends Error {
-  readonly type: ShamirErrorType;
-  constructor(type: ShamirErrorType, message?: string);
-  private static defaultMessage;
-}
-/**
- * Mirrors Rust's `Result<T, Error>` for API parity.
- *
- * The TypeScript port surfaces failures by throwing `ShamirError`
- * instances rather than returning a sum type, so this alias is a no-op
- * (`ShamirResult<T>` ≡ `T`). It is kept so signatures published in
- * `@blockchaincommons/shamir` remain visually parallel to their Rust counterparts.
- */
-type ShamirResult<T> = T;
-//#endregion
-//#region src/shamir.d.ts
-/**
- * Splits a secret into shares using the Shamir secret sharing algorithm.
- *
- * @param threshold - The minimum number of shares required to reconstruct the
- *   secret. Must be greater than or equal to 1 and less than or equal to
- *   shareCount.
- * @param shareCount - The total number of shares to generate. Must be at least
- *   threshold and less than or equal to MAX_SHARE_COUNT.
- * @param secret - A Uint8Array containing the secret to be split. Must be at
- *   least MIN_SECRET_LEN bytes long and at most MAX_SECRET_LEN bytes long.
- *   The length must be an even number.
- * @param randomGenerator - An implementation of the RandomNumberGenerator
- *   interface, used to generate random data.
- * @returns An array of Uint8Array representing the shares of the secret.
- * @throws ShamirError if parameters are invalid
- *
- * @example
- * ```typescript
- * import { splitSecret } from "@blockchaincommons/shamir";
- * import { SecureRandomNumberGenerator } from "@blockchaincommons/rand";
- *
- * const threshold = 2;
- * const shareCount = 3;
- * const secret = new TextEncoder().encode("my secret belongs to me.");
- * const rng = new SecureRandomNumberGenerator();
- *
- * const shares = splitSecret(threshold, shareCount, secret, rng);
- * console.log(shares.length); // 3
- * ```
- */
-declare function splitSecret(threshold: number, shareCount: number, secret: Uint8Array, randomGenerator: RandomNumberGenerator): Uint8Array[];
-/**
- * Recovers the secret from the given shares using the Shamir secret sharing
- * algorithm.
- *
- * @param indexes - An array of indexes of the shares to be used for recovering
- *   the secret. These are the indexes of the shares returned by splitSecret.
- * @param shares - An array of shares of the secret matching the indexes in
- *   indexes. These are the shares returned by splitSecret.
- * @returns A Uint8Array representing the recovered secret.
- * @throws ShamirError if parameters are invalid or checksum verification fails
- *
- * @example
- * ```typescript
- * import { recoverSecret } from "@blockchaincommons/shamir";
- *
- * const indexes = [0, 2];
- * const shares = [
- *   new Uint8Array([47, 165, 102, 232, ...]),
- *   new Uint8Array([221, 174, 116, 201, ...]),
- * ];
- *
- * const secret = recoverSecret(indexes, shares);
- * console.log(new TextDecoder().decode(secret)); // "my secret belongs to me."
- * ```
- */
-declare function recoverSecret(indexes: number[], shares: Uint8Array[]): Uint8Array;
-//#endregion
-//#region src/index.d.ts
-/**
- * Copyright © 2023-2026 Blockchain Commons, LLC
- * Copyright © 2025-2026 Parity Technologies
- *
- */
-/**
- * The minimum length of a secret.
- */
-declare const MIN_SECRET_LEN = 16;
-/**
- * The maximum length of a secret.
- */
-declare const MAX_SECRET_LEN = 32;
-/**
- * The maximum number of shares that can be generated from a secret.
- */
+/** Shortest secret that can be split, in bytes. */
+declare const MIN_SECRET_LENGTH = 16;
+/** Longest secret that can be split, in bytes. */
+declare const MAX_SECRET_LENGTH = 32;
+/** Most shares a split can produce. */
 declare const MAX_SHARE_COUNT = 16;
 //#endregion
-export { MAX_SECRET_LEN, MAX_SHARE_COUNT, MIN_SECRET_LEN, ShamirError, ShamirErrorType, type ShamirResult, recoverSecret, splitSecret };
+//#region src/error.d.ts
+/**
+ * The single error type thrown by this package.
+ *
+ * @module error
+ */
+/** Machine-readable discriminant for a {@link ShamirError}. */
+type ShamirErrorCode = "SecretTooLong" | "TooManyShares" | "ChecksumFailure" | "SecretTooShort" | "SecretNotEvenLen" | "InvalidThreshold" | "SharesUnequalLength";
+/**
+ * Thrown for invalid split parameters, malformed share sets, and a failed
+ * recovery checksum. Branch on `code`; messages are for humans.
+ */
+declare class ShamirError extends Error {
+  readonly code: ShamirErrorCode;
+  constructor(code: ShamirErrorCode, message?: string);
+  static isShamirError(value: unknown): value is ShamirError;
+  static secretTooLong(): ShamirError;
+  static tooManyShares(): ShamirError;
+  /** The recovered digest does not match: wrong, missing, or corrupted shares. */
+  static checksumFailure(): ShamirError;
+  static secretTooShort(): ShamirError;
+  static secretNotEvenLen(): ShamirError;
+  static invalidThreshold(): ShamirError;
+  static sharesUnequalLength(): ShamirError;
+}
+//#endregion
+//#region src/shamir.d.ts
+/** One share: its x-coordinate and the y-bytes. Both are wire. */
+interface ShamirShare {
+  readonly index: number;
+  readonly data: Uint8Array;
+}
+/** Options for {@link splitSecret}. */
+interface SplitOptions {
+  /** Shares needed to recover; `1 ≤ threshold ≤ shareCount`. */
+  readonly threshold: number;
+  /** Shares produced; at most {@link MAX_SHARE_COUNT}. */
+  readonly shareCount: number;
+  /** Generator for the random shares. Default: secure. */
+  readonly rng?: RandomNumberGenerator | undefined;
+}
+/**
+ * Split `secret` into `shareCount` shares, any `threshold` of which recover
+ * it. The secret must be 16–32 bytes and even-length.
+ *
+ * With `threshold` 1 every share is a copy of the secret and no randomness
+ * is drawn. Otherwise `threshold - 2` shares are drawn whole from `rng`,
+ * then `secret.length - 4` bytes for the digest share's tail; the remaining
+ * shares are interpolated. That draw order is wire.
+ *
+ * @throws {ShamirError} `TooManyShares`, `InvalidThreshold`, `SecretTooLong`,
+ * `SecretTooShort`, `SecretNotEvenLen`, checked in that order.
+ */
+declare function splitSecret(secret: Uint8Array, options: SplitOptions): ShamirShare[];
+/**
+ * Recover the secret from `shares`; their count is the threshold.
+ *
+ * @throws {ShamirError} `InvalidThreshold` for no shares or more than
+ * {@link MAX_SHARE_COUNT}, the length codes for malformed share data,
+ * `SharesUnequalLength`, and `ChecksumFailure` when the shares do not
+ * belong together or have been altered.
+ */
+declare function recoverSecret(shares: readonly ShamirShare[]): Uint8Array<ArrayBuffer>;
+//#endregion
+export { MAX_SECRET_LENGTH, MAX_SHARE_COUNT, MIN_SECRET_LENGTH, ShamirError, type ShamirErrorCode, type ShamirShare, type SplitOptions, recoverSecret, splitSecret };
 //# sourceMappingURL=index.d.mts.map

@@ -1,46 +1,45 @@
 /**
- * Copyright © 2023-2026 Blockchain Commons, LLC
- * Copyright © 2025-2026 Parity Technologies
+ * Lagrange interpolation over GF(2^8), 32 bytes at a time.
  *
+ * @module interpolate
  */
-
-// Ported from bc-shamir-rust/src/interpolate.rs
-
-import { memzero, memzeroAll } from "@blockchaincommons/crypto";
-import { MAX_SECRET_LEN } from "./index.js";
+import { memzero } from "@blockchaincommons/crypto";
+import { MAX_SECRET_LENGTH } from "./constants.js";
 import { bitslice, bitsliceSetall, gf256Add, gf256Inv, gf256Mul, unbitslice } from "./hazmat.js";
 
+const REG = 8;
+
 /**
- * Calculate the lagrange basis coefficients for the lagrange polynomial
- * defined by the x coordinates xc at the value x.
+ * Write the `n` Lagrange basis coefficients l_i(x) for the points `xc[0..n]`
+ * into `values[0..n]`. All `n` numerators and denominators are computed in
+ * one bitsliced register each (lane i holds point i), so the work is
+ * independent of `n` up to 32.
  *
- * After the function runs, the values array should hold data satisfying:
- *                ---     (x-xc[j])
- *   values[i] =  | |   -------------
- *              j != i  (xc[i]-xc[j])
- *
- * @param values - Output array for the lagrange basis values
- * @param n - Number of points (length of the xc array, 0 < n <= 32)
- * @param xc - Array of x components to use as interpolating points
- * @param x - x coordinate to evaluate lagrange polynomials at
+ * `words` provides `(n + 6) * 8` scratch words, `xx` 48 scratch bytes.
  */
-function hazmatLagrangeBasis(values: Uint8Array, n: number, xc: Uint8Array, x: number): void {
-  // call the contents of xc [ x0 x1 x2 ... xn-1 ]
-  const xx = new Uint8Array(32 + 16);
-  const xSlice = new Uint32Array(8);
+function lagrangeBasis(
+  values: Uint8Array,
+  n: number,
+  xc: Uint8Array,
+  x: number,
+  words: Uint32Array,
+  xx: Uint8Array,
+): void {
+  const xSlice = words.subarray(0, REG);
+  const numerator = words.subarray(REG, 2 * REG);
+  const denominator = words.subarray(2 * REG, 3 * REG);
+  const temp = words.subarray(3 * REG, 4 * REG);
+  const invY = words.subarray(4 * REG, 5 * REG);
+  const invZ = words.subarray(5 * REG, 6 * REG);
+  // Views are created once: a subarray per loop iteration is what made the
+  // first cut of this rewrite slower than the allocate-per-call original.
   const lxi: Uint32Array[] = [];
-  for (let i = 0; i < n; i++) {
-    lxi.push(new Uint32Array(8));
-  }
-  const numerator = new Uint32Array(8);
-  const denominator = new Uint32Array(8);
-  const temp = new Uint32Array(8);
+  for (let i = 0; i < n; i++) lxi.push(words.subarray((6 + i) * REG, (7 + i) * REG));
+  const lx0 = lxi[0];
 
+  // xx = [ x0 x1 … xn-1 x0 x1 … xn-1 0 … ]; lxi[i] is the rotation starting at i.
   xx.set(xc.subarray(0, n), 0);
-
-  // xx now contains bitsliced [ x0 x1 x2 ... xn-1 0 0 0 ... ]
   for (let i = 0; i < n; i++) {
-    // lxi = bitsliced [ xi xi+1 xi+2 ... xi-1 0 0 0 ]
     bitslice(lxi[i], xx.subarray(i));
     xx[i + n] = xx[i];
   }
@@ -50,114 +49,73 @@ function hazmatLagrangeBasis(values: Uint8Array, n: number, xc: Uint8Array, x: n
   bitsliceSetall(denominator, 1);
 
   for (let i = 1; i < n; i++) {
+    const lx = lxi[i];
+    // numerator_j *= x - x_{j+i}
     temp.set(xSlice);
-    gf256Add(temp, lxi[i]);
-    // temp = [ x-xi+i x-xi+2 x-xi+3 ... x-xi x x x]
-    const numerator2 = new Uint32Array(numerator);
-    gf256Mul(numerator, numerator2, temp);
-
-    temp.set(lxi[0]);
-    gf256Add(temp, lxi[i]);
-    // temp = [x0-xi+1 x1-xi+1 x2-xi+2 ... xn-x0 0 0 0]
-    const denominator2 = new Uint32Array(denominator);
-    gf256Mul(denominator, denominator2, temp);
+    gf256Add(temp, lx);
+    gf256Mul(numerator, numerator, temp);
+    // denominator_j *= x_j - x_{j+i}
+    temp.set(lx0);
+    gf256Add(temp, lx);
+    gf256Mul(denominator, denominator, temp);
   }
 
-  // At this stage the numerator contains
-  // [ num0 num1 num2 ... numn 0 0 0]
-  //
-  // where numi = prod(j, j!=i, x-xj )
-  //
-  // and the denominator contains
-  // [ d0 d1 d2 ... dn 0 0 0]
-  //
-  // where di = prod(j, j!=i, xi-xj)
-
-  gf256Inv(temp, denominator);
-
-  // gf256_inv uses exponentiation to calculate inverse, so the zeros end up
-  // remaining zeros.
-
-  // tmp = [ 1/d0 1/d1 1/d2 ... 1/dn 0 0 0]
-
-  const numerator2 = new Uint32Array(numerator);
-  gf256Mul(numerator, numerator2, temp);
-
-  // numerator now contains [ l_n_0(x) l_n_1(x) ... l_n_n-1(x) 0 0 0]
-  // use the xx array to unpack it
+  gf256Inv(temp, denominator, invY, invZ);
+  gf256Mul(numerator, numerator, temp);
 
   unbitslice(xx, numerator);
-
-  // copy results to output array
   values.set(xx.subarray(0, n), 0);
 }
 
 /**
- * Safely interpolate the polynomial going through
- * the points (x0 [y0_0 y0_1 y0_2 ... y0_31]) , (x1 [y1_0 ...]), ...
- *
- * where
- *   xi points to [x0 x1 ... xn-1 ]
- *   y contains an array of pointers to 32-bit arrays of y values
- *   y contains [y0 y1 y2 ... yn-1]
- *   and each of the yi arrays contain [yi_0 yi_i ... yi_31].
- *
- * @param n - Number of points to interpolate
- * @param xi - x coordinates for points (array of length n)
- * @param yl - Length of y coordinate arrays
- * @param yij - Array of n arrays of length yl
- * @param x - Coordinate to interpolate at
- * @returns The interpolated result of length yl
+ * Evaluate at `x` the polynomial of degree `n - 1` through the points
+ * `(xi[i], yij[i])`, byte-wise over the first `yl` bytes of each y.
+ * Every scratch buffer is zeroed before returning.
  */
 export function interpolate(
   n: number,
   xi: Uint8Array,
   yl: number,
-  yij: Uint8Array[],
+  yij: readonly Uint8Array[],
   x: number,
-): Uint8Array {
-  // The hazmat gf256 implementation needs the y-coordinate data
-  // to be in 32-byte blocks
-  const y: Uint8Array[] = [];
+): Uint8Array<ArrayBuffer> {
+  // One word arena and one byte arena per call: the basis needs (n + 6)
+  // registers, the sum three more; the bytes hold the 32-byte y blocks the
+  // bitslicer needs, the 48-byte xx scratch, a 32-byte result block, and
+  // the n basis coefficients.
+  const words = new Uint32Array((n + 9) * REG);
+  const bytes = new Uint8Array(n * MAX_SECRET_LENGTH + 48 + MAX_SECRET_LENGTH + n);
+  const basisWords = words.subarray(0, (n + 6) * REG);
+  const ySlice = words.subarray((n + 6) * REG, (n + 7) * REG);
+  const resultSlice = words.subarray((n + 7) * REG, (n + 8) * REG);
+  const temp = words.subarray((n + 8) * REG, (n + 9) * REG);
+  const yBlocks: Uint8Array[] = [];
   for (let i = 0; i < n; i++) {
-    y.push(new Uint8Array(MAX_SECRET_LEN));
+    yBlocks.push(bytes.subarray(i * MAX_SECRET_LENGTH, (i + 1) * MAX_SECRET_LENGTH));
   }
-  const values = new Uint8Array(MAX_SECRET_LEN);
+  const xx = bytes.subarray(n * MAX_SECRET_LENGTH, n * MAX_SECRET_LENGTH + 48);
+  const values = bytes.subarray(
+    n * MAX_SECRET_LENGTH + 48,
+    n * MAX_SECRET_LENGTH + 48 + MAX_SECRET_LENGTH,
+  );
+  const lagrange = bytes.subarray(n * MAX_SECRET_LENGTH + 48 + MAX_SECRET_LENGTH);
+
+  for (let i = 0; i < n; i++) yBlocks[i].set(yij[i].subarray(0, yl), 0);
+
+  lagrangeBasis(lagrange, n, xi, x, basisWords, xx);
 
   for (let i = 0; i < n; i++) {
-    y[i].set(yij[i].subarray(0, yl), 0);
-  }
-
-  const lagrange = new Uint8Array(n);
-  const ySlice = new Uint32Array(8);
-  const resultSlice = new Uint32Array(8);
-  const temp = new Uint32Array(8);
-
-  hazmatLagrangeBasis(lagrange, n, xi, x);
-
-  bitsliceSetall(resultSlice, 0);
-
-  for (let i = 0; i < n; i++) {
-    bitslice(ySlice, y[i]);
+    bitslice(ySlice, yBlocks[i]);
     bitsliceSetall(temp, lagrange[i]);
-    const temp2 = new Uint32Array(temp);
-    gf256Mul(temp, temp2, ySlice);
+    gf256Mul(temp, temp, ySlice);
     gf256Add(resultSlice, temp);
   }
 
   unbitslice(values, resultSlice);
-
-  // the calling code is only expecting yl bytes back
   const result = new Uint8Array(yl);
   result.set(values.subarray(0, yl), 0);
 
-  // clean up stack
-  memzero(lagrange);
-  memzero(ySlice);
-  memzero(resultSlice);
-  memzero(temp);
-  memzeroAll(y);
-  memzero(values);
-
+  memzero(words);
+  memzero(bytes);
   return result;
 }
