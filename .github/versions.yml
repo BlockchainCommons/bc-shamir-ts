@@ -1,0 +1,8 @@
+# Version map: TypeScript package -> Reference implementation
+# Used by workflow automation to track upstream reference versions.
+packages:
+  shamir:
+    npm: "@blockchaincommons/shamir"
+    repo: "BlockchainCommons/bc-shamir-rust"
+    version: "0.13.0"
+    commit: "fcf8deb2b0f51566635a7de89ae6d8d6628921c7"
