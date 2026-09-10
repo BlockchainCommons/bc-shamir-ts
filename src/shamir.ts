@@ -6,7 +6,7 @@
 
 // Ported from bc-shamir-rust/src/shamir.rs
 
-import { hmacSha256, memzero, memzeroVecVecU8 } from "@blockchaincommons/crypto";
+import { hmacSha256, memzero, memzeroAll } from "@blockchaincommons/crypto";
 import type { RandomNumberGenerator } from "@blockchaincommons/rand";
 
 import { ShamirError, ShamirErrorType } from "./error.js";
@@ -92,7 +92,7 @@ export function splitSecret(
     }
 
     for (let index = 0; index < threshold - 2; index++) {
-      randomGenerator.fillRandomData(result[index]);
+      randomGenerator.fillBytes(result[index]);
       x[n] = index;
       y[n].set(result[index]);
       n++;
@@ -100,7 +100,7 @@ export function splitSecret(
 
     // generate secret_length - 4 bytes worth of random data
     const digest = new Uint8Array(secret.length);
-    randomGenerator.fillRandomData(digest.subarray(4));
+    randomGenerator.fillBytes(digest.subarray(4));
     // put 4 bytes of digest at the top of the digest array
     const d = createDigest(digest.subarray(4), secret);
     digest.set(d.subarray(0, 4), 0);
@@ -120,7 +120,7 @@ export function splitSecret(
     // clean up stack
     memzero(digest);
     memzero(x);
-    memzeroVecVecU8(y);
+    memzeroAll(y);
 
     return result;
   }

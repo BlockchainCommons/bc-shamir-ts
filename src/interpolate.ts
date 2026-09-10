@@ -6,7 +6,7 @@
 
 // Ported from bc-shamir-rust/src/interpolate.rs
 
-import { memzero, memzeroVecVecU8 } from "@blockchaincommons/crypto";
+import { memzero, memzeroAll } from "@blockchaincommons/crypto";
 import { MAX_SECRET_LEN } from "./index.js";
 import { bitslice, bitsliceSetall, gf256Add, gf256Inv, gf256Mul, unbitslice } from "./hazmat.js";
 
@@ -156,7 +156,7 @@ export function interpolate(
   memzero(ySlice);
   memzero(resultSlice);
   memzero(temp);
-  memzeroVecVecU8(y);
+  memzeroAll(y);
   memzero(values);
 
   return result;
