@@ -1,12 +1,5 @@
 # Migrating from `@bcts/shamir` to `@blockchaincommons/shamir`
 
-`@blockchaincommons/shamir` is the canonical home of this library. It was
-extracted from the [`paritytech/bcts`](https://github.com/paritytech/bcts)
-monorepo, where it was published as `@bcts/shamir`, into its own Blockchain
-Commons repository at
-[`BlockchainCommons/bc-shamir-ts`](https://github.com/BlockchainCommons/bc-shamir-ts),
-and redesigned as an idiomatic TypeScript library in the same release.
-
 **Every share byte is unchanged.** Share values, index assignment, the RNG
 draw order and the checksum are byte-identical to `@bcts/shamir` and to the
 Rust reference `bc-shamir 0.13.0`; 734 golden vectors, a differential corpus
