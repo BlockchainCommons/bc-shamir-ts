@@ -19,7 +19,7 @@ describe("golden: splits", () => {
       for (let t = 1; t <= n; t++)
         for (const len of [16, 18, 30, 32])
           out.push(
-            `${t}/${n}/${len}: ${run({ k: "split", t, n, secret: { cycle: len, start: 1 }, rng: SEEDS[0]! })}`,
+            `${t}/${n}/${len}: ${run({ k: "split", t, n, secret: { cycle: len, start: 1 }, rng: SEEDS[0] })}`,
           );
       expect(out).toMatchSnapshot();
     });
@@ -29,17 +29,15 @@ describe("golden: splits", () => {
 describe("golden: recovery", () => {
   it("every 3-subset of a 3-of-6 split recovers the secret", () => {
     const secret = toBytes({ cycle: 24, start: 0x11 });
-    const shares = api.split(3, 6, secret, api.makeRng(SEEDS[1]!));
+    const shares = api.split(3, 6, secret, api.makeRng(SEEDS[1]));
     for (let a = 0; a < 6; a++)
       for (let b = a + 1; b < 6; b++)
         for (let c = b + 1; c < 6; c++) {
-          expect(hex(api.recover([a, b, c], [shares[a]!, shares[b]!, shares[c]!]))).toBe(
-            hex(secret),
-          );
+          expect(hex(api.recover([a, b, c], [shares[a], shares[b], shares[c]]))).toBe(hex(secret));
         }
   });
   it("error codes in validator order", () => {
-    const rng = SEEDS[0]!;
+    const rng = SEEDS[0];
     const cases: [number, number, number][] = [
       [2, 17, 16],
       [0, 3, 16],
@@ -85,10 +83,8 @@ describe("golden: recovery", () => {
 });
 
 /**
- * Freeze additions: every non-integer parameter and out-of-domain share
- * index raises `ShamirError` `InvalidParameter`, recorded verbatim so a
- * regression is a visible diff. `Uint8Array.from` narrows an index the way
- * Rust's `as u8` does: 256 → 0, −1 → 255, 1.5 → 1, NaN → 0.
+ * Integer validation rejects inputs outside the supported safe integer domain.
+ * Valid oversized labels narrow like Rust's `as u8`: 256 becomes 0.
  */
 describe("golden: freeze additions", () => {
   const secret = toBytes({ cycle: 16, start: 1 });
@@ -121,14 +117,14 @@ describe("golden: freeze additions", () => {
   it("B3: share indexes outside the u8 domain", () => {
     const s = src.splitSecret(secret, { threshold: 3, shareCount: 5, rng: rng() });
     const withIndex = (index: number) =>
-      outcome(() => src.recoverSecret([{ index, data: s[0]!.data }, s[1]!, s[2]!]));
+      outcome(() => src.recoverSecret([{ index, data: s[0].data }, s[1], s[2]]));
     expect([
       `index 256 on share 0: ${withIndex(256)}`,
       `index -1 on share 0: ${withIndex(-1)}`,
       `index 1.5 on share 0: ${withIndex(1.5)}`,
       `index NaN on share 0: ${withIndex(NaN)}`,
       `index 254 on share 0: ${withIndex(254)}`,
-      `duplicate index 0: ${outcome(() => src.recoverSecret([s[0]!, s[0]!, s[2]!]))}`,
+      `duplicate index 0: ${outcome(() => src.recoverSecret([s[0], s[0], s[2]]))}`,
     ]).toMatchSnapshot();
   });
 
@@ -138,7 +134,7 @@ describe("golden: freeze additions", () => {
     expect([
       `threshold 2 share frozen: ${Object.isFrozen(s[0])}`,
       `threshold 1 share frozen: ${Object.isFrozen(one[0])}`,
-      `share data is a fresh buffer: ${s[0]!.data.buffer !== secret.buffer}`,
+      `share data is a fresh buffer: ${s[0].data.buffer !== secret.buffer}`,
     ]).toMatchSnapshot();
   });
 });

@@ -29,7 +29,7 @@ describe("Cross-platform Rust → TS share decoding", () => {
     [0, 3, 4],
   ]) {
     it(`recovers the 3/5 secret from shares ${indexes.join(",")}`, () => {
-      const recovered = recoverSecret(indexes.map((i) => share(i, RUST_3_5_SHARES[i]!)));
+      const recovered = recoverSecret(indexes.map((i) => share(i, RUST_3_5_SHARES[i])));
       expect(bytesToHex(recovered)).toBe(RUST_3_5_SECRET);
     });
   }
@@ -49,8 +49,8 @@ describe("Cross-platform Rust → TS share decoding", () => {
     for (let i = 0; i < 7; i++)
       for (let j = i + 1; j < 7; j++) {
         const recovered = recoverSecret([
-          share(i, RUST_2_7_SHARES[i]!),
-          share(j, RUST_2_7_SHARES[j]!),
+          share(i, RUST_2_7_SHARES[i]),
+          share(j, RUST_2_7_SHARES[j]),
         ]);
         expect(bytesToHex(recovered)).toBe(RUST_2_7_SECRET);
         combinations++;
@@ -59,9 +59,9 @@ describe("Cross-platform Rust → TS share decoding", () => {
   });
 
   it("rejects a tampered Rust-produced share with ChecksumFailure", () => {
-    const tampered = share(1, RUST_3_5_SHARES[1]!);
+    const tampered = share(1, RUST_3_5_SHARES[1]);
     tampered.data[0] ^= 0x01;
-    const shares = [share(0, RUST_3_5_SHARES[0]!), tampered, share(2, RUST_3_5_SHARES[2]!)];
+    const shares = [share(0, RUST_3_5_SHARES[0]), tampered, share(2, RUST_3_5_SHARES[2])];
     expect(() => recoverSecret(shares)).toThrow(ShamirError);
     try {
       recoverSecret(shares);

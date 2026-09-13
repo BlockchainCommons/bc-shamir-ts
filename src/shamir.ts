@@ -6,7 +6,7 @@
 import { hmacSha256, memzero, memzeroAll } from "@blockchaincommons/crypto";
 import { type RngOptions, secureRng } from "@blockchaincommons/rand";
 import { MAX_SECRET_LENGTH, MAX_SHARE_COUNT, MIN_SECRET_LENGTH } from "./constants.js";
-import { U8, USIZE, expectInt } from "./domain.js";
+import { USIZE, expectInt } from "./domain.js";
 import { ShamirError } from "./error.js";
 import { interpolate } from "./interpolate.js";
 
@@ -20,7 +20,7 @@ const DIGEST_INDEX = 254;
  * be a view when the share comes from elsewhere.
  */
 export interface ShamirShare {
-  /** The x-coordinate, an integer in `[0, 255]`; `splitSecret` assigns `0..shareCount-1`. */
+  /** The x-coordinate, a non-negative safe integer, truncated to eight bits during recovery; `splitSecret` assigns `0..shareCount-1`. */
   readonly index: number;
   /** The y-bytes; every share of one split has the secret's length. */
   readonly data: Uint8Array;
@@ -41,8 +41,7 @@ function digestOf(randomTail: Uint8Array, secret: Uint8Array): Uint8Array {
 }
 
 // Check order is contractual; consumers branch on the first failure. The
-// integer checks come first so that every input the reference's `usize`
-// can express still gets the reference's code in the reference's order.
+// integer checks enforce the supported non-negative safe integer domain.
 function validate(threshold: number, shareCount: number, secretLength: number): void {
   expectInt("threshold", threshold, USIZE);
   expectInt("shareCount", shareCount, USIZE);
@@ -116,10 +115,10 @@ export function splitSecret(secret: Uint8Array, options: SplitOptions): ShamirSh
 /**
  * Recover the secret from `shares`; their count is the threshold.
  *
- * @throws {ShamirError} `InvalidThreshold` for no shares or more than
+ * @throws {ShamirError} `InvalidThreshold` for no shares, `TooManyShares` above
  * {@link MAX_SHARE_COUNT}, the length codes for malformed share data,
- * `SharesUnequalLength`, `InvalidParameter` for an `index` that is not an
- * integer in `[0, 255]`, and `ChecksumFailure` when the shares do not
+ * `SharesUnequalLength`, `InvalidParameter` for an `index` that is not a
+ * non-negative safe integer, and `ChecksumFailure` when the shares do not
  * belong together or have been altered. Indexes 254 and 255 and duplicates
  * are left to the checksum, as the reference leaves them.
  */
@@ -130,7 +129,7 @@ export function recoverSecret(shares: readonly ShamirShare[]): Uint8Array<ArrayB
   const length = first.data.length;
   validate(threshold, threshold, length);
   if (!shares.every((s) => s.data.length === length)) throw ShamirError.sharesUnequalLength();
-  for (const s of shares) expectInt("index", s.index, U8);
+  for (const s of shares) expectInt("index", s.index, USIZE);
 
   if (threshold === 1) return new Uint8Array(first.data);
 

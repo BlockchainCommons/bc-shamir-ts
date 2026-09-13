@@ -17,7 +17,7 @@ export interface Bounds {
 
 /** `usize`: a safe non-negative integer. */
 export const USIZE: Bounds = { min: 0, max: Number.MAX_SAFE_INTEGER };
-/** `u8`: the share index domain. */
+/** `u8`: an eight-bit integer domain; recovery inputs use `USIZE`. */
 export const U8: Bounds = { min: 0, max: 0xff };
 
 /** `true` when `value` is an integer `number` within `bounds`. */

@@ -4,7 +4,7 @@
  * outcomes, including error codes, must be identical.
  *
  * Tombstones are the only allowed differences, enumerated below. **T1**:
- * every `domain` recipe — a parameter or index label the reference cannot
+ * invalid `domain` recipes — a parameter or index label the reference cannot
  * express — throws `InvalidParameter` in the tree, where the baseline
  * returned nothing, leaked a `TypeError`, or truncated the label.
  */
@@ -64,7 +64,7 @@ describe("differential: baseline vs working tree", () => {
       }
       expect(n).toBeGreaterThan(0);
       expect(diffs).toEqual([]);
-      if (t1) expect(tombstoned).toBe(T1.landed ? n : T1.beforeLanding.rows);
+      if (t1) expect(tombstoned).toBe(T1.landed ? 11 : T1.beforeLanding.rows);
     });
   }
 });

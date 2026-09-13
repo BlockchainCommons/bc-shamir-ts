@@ -1,7 +1,9 @@
 /**
  * Build the frozen pre-redesign baseline bundle.
+ * Run against the historical source revision with compatible sibling baselines;
+ * current source may import APIs that those frozen dependencies do not export.
  *
- *   bun scripts/build-baseline.mjs
+ *   bun scripts/build-baseline.ts
  *
  * Bundles src/index.ts as a single ESM file with every @blockchaincommons
  * sibling INLINED, resolving each sibling to ITS frozen baseline bundle
@@ -13,7 +15,14 @@
 import { build } from "tsdown";
 import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  copyFileSync,
+  readdirSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,15 +34,15 @@ const outDir = join(root, "tests", "baseline");
 mkdirSync(outDir, { recursive: true });
 
 // Map every sibling to its frozen baseline bundle where available.
-const alias = {};
+const alias: Record<string, string> = {};
 for (const dir of readdirSync(parent)) {
   const bl = join(parent, dir, "tests", "baseline");
   if (!existsSync(bl)) continue;
-  const f = readdirSync(bl).find((x) => x.endsWith("-baseline.mjs"));
-  if (!f) continue;
   const depPkgPath = join(parent, dir, "package.json");
   if (!existsSync(depPkgPath)) continue;
   const depName = JSON.parse(readFileSync(depPkgPath, "utf8")).name;
+  const f = `${depName.replace("@blockchaincommons/", "")}-baseline.mjs`;
+  if (!existsSync(join(bl, f))) continue;
   // The canonical dcbor is a published, stable dependency: never alias it to
   // its own (much older) pre-redesign baseline.
   if (depName !== pkg.name && depName !== "@blockchaincommons/dcbor") alias[depName] = join(bl, f);
@@ -45,7 +54,11 @@ await build({
   config: false,
   // A package may provide tests/baseline/entry.ts to widen the bundle surface
   // (e.g. expose an inlined dependency's global store to the differential).
-  entry: { [`${short}-baseline`]: existsSync(join(outDir, "entry.ts")) ? join(outDir, "entry.ts") : join(root, "src/index.ts") },
+  entry: {
+    [`${short}-baseline`]: existsSync(join(outDir, "entry.ts"))
+      ? join(outDir, "entry.ts")
+      : join(root, "src/index.ts"),
+  },
   outDir,
   format: ["esm"],
   dts: false,
@@ -54,7 +67,11 @@ await build({
   target: "es2022",
   noExternal: [/^@blockchaincommons\//],
   alias,
-  inputOptions: { onwarn(w, d) { if (w.code !== "SOURCEMAP_BROKEN") d(w); } },
+  inputOptions: {
+    onwarn(w, d) {
+      if (w.code !== "SOURCEMAP_BROKEN") d(w);
+    },
+  },
 });
 
 const bundle = join(outDir, `${short}-baseline.mjs`);
@@ -62,8 +79,11 @@ let text = readFileSync(bundle, "utf8").replace(/\n\/\/# sourceMappingURL=.*\n?$
 writeFileSync(bundle, text);
 const sha = createHash("sha256").update(text).digest("hex");
 const commit = execSync("git rev-parse HEAD", { cwd: root }).toString().trim();
-if (existsSync(join(root, "api/index.d.mts"))) copyFileSync(join(root, "api/index.d.mts"), join(outDir, `${short}-baseline.d.mts`));
-writeFileSync(join(outDir, "README.md"), `# Frozen baseline build
+if (existsSync(join(root, "api/index.d.mts")))
+  copyFileSync(join(root, "api/index.d.mts"), join(outDir, `${short}-baseline.d.mts`));
+writeFileSync(
+  join(outDir, "README.md"),
+  `# Frozen baseline build
 
 \`${short}-baseline.mjs\` is the self-contained ESM bundle of \`${pkg.name}\` built from
 commit \`${commit}\`, the pre-redesign wire-format reference. Sibling
@@ -78,5 +98,8 @@ an accidental rebuild cannot turn the differential into a self-comparison.
 
 Baseline commit: ${commit}
 Baseline sha256: ${sha}
-`);
-console.log(`wrote ${bundle}\nsha256 ${sha}\ncommit ${commit}\naliases: ${JSON.stringify(alias, null, 1)}`);
+`,
+);
+console.log(
+  `wrote ${bundle}\nsha256 ${sha}\ncommit ${commit}\naliases: ${JSON.stringify(alias, null, 1)}`,
+);

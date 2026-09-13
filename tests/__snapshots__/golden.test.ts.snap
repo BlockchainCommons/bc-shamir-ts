@@ -22,7 +22,7 @@ exports[`golden: freeze additions > B1/B2: non-integer threshold and shareCount 
 
 exports[`golden: freeze additions > B3: share indexes outside the u8 domain 1`] = `
 [
-  "index 256 on share 0: throw:InvalidParameter",
+  "index 256 on share 0: recovered:0102030405060708090a0b0c0d0e0f10",
   "index -1 on share 0: throw:InvalidParameter",
   "index 1.5 on share 0: throw:InvalidParameter",
   "index NaN on share 0: throw:InvalidParameter",

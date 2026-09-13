@@ -2,7 +2,7 @@
 
 `shamir-baseline.mjs` is the self-contained ESM bundle of `@blockchaincommons/shamir` built from
 commit `c45f44d1aedbd5da06c4e0fd0b553d8ece2b904b`, the pre-redesign wire-format reference. The
-sibling `@blockchaincommons/crypto` is INLINED from its own frozen baseline bundle, so this
+sibling `@blockchaincommons/crypto` is bundled from its own frozen baseline bundle, so this
 bundle keeps the pre-redesign behaviour of that dependency after it changes. The pre-redesign
 shamir API took an external RNG object rather than importing `@blockchaincommons/rand`
 directly, so `rand-baseline.mjs` / `rand-baseline.d.mts` (a vendored copy of
@@ -10,8 +10,21 @@ directly, so `rand-baseline.mjs` / `rand-baseline.d.mts` (a vendored copy of
 `shamir-baseline.d.mts` is the public surface at that commit.
 
 `tests/differential.test.ts` runs every corpus recipe through this bundle and
-the working tree and asserts identical outcomes; it pins the sha256 below so
-an accidental rebuild cannot turn the differential into a self-comparison.
+the working tree. Outcomes must match except for the 11 invalid JavaScript-domain
+recipes covered by T1: the current implementation throws `InvalidParameter`
+where the baseline accepted/coerced an input or failed differently. Oversized safe
+integer labels now match the baseline and have no exception.
+
+The test pins the SHA-256 below so an accidental rebuild cannot turn the
+differential comparison into a comparison of the same implementation. These
+historical bundles and their recorded commit/hash remain fixed. Use
+`bun run test:differential` from the package root to run this check.
+
+`bun run baseline:build` is a historical reconstruction tool: it requires the
+corresponding source revision and compatible dependency baselines. Do not rebuild
+the frozen artifacts from current source to make a differential failure pass.
+For the separate comparison against Rust, see
+[the Rust validation guide](../rust-validation/README.md).
 
 Baseline commit: c45f44d1aedbd5da06c4e0fd0b553d8ece2b904b
 Baseline sha256: 448e7858ace9d183f36a26c193678729c20554a8290e246db794f02772601307

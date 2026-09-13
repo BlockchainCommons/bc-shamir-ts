@@ -4,9 +4,11 @@
  *
  * {@link splitSecret} turns a 16–32 byte secret into `shareCount`
  * {@link ShamirShare}s, any `threshold` of which {@link recoverSecret}
- * turns back. Every failure is a {@link ShamirError} with a `code`: the
- * reference's seven, plus `InvalidParameter` for a `threshold`, `shareCount`
- * or share `index` outside the integer domain the reference's type implies.
+ * turns back. Validation and checksum failures throw {@link ShamirError}.
+ * Its codes include the reference's eight variants and `InvalidParameter`
+ * for a `threshold`, `shareCount` or share `index` outside the supported
+ * non-negative safe integer domain. RNG and other dependency failures may
+ * propagate separately.
  *
  * @module @blockchaincommons/shamir
  */

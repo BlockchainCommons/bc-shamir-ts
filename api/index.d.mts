@@ -20,10 +20,10 @@ export declare const MAX_SHARE_COUNT = 16;
  * @module error
  */
 /**
- * Machine-readable discriminant for a {@link ShamirError}. Seven codes are
+ * Machine-readable discriminant for a {@link ShamirError}. Eight codes are
  * the reference's variant names; `InvalidParameter` is JS-only.
  */
-type ShamirErrorCode = "SecretTooLong" | "TooManyShares" | "ChecksumFailure" | "SecretTooShort" | "SecretNotEvenLen" | "InvalidThreshold" | "SharesUnequalLength" | "InvalidParameter";
+type ShamirErrorCode = "SecretTooLong" | "TooManyShares" | "InterpolationFailure" | "ChecksumFailure" | "SecretTooShort" | "SecretNotEvenLen" | "InvalidThreshold" | "SharesUnequalLength" | "InvalidParameter";
 /** The argument an `InvalidParameter` error names. */
 type ShamirParameter = "threshold" | "shareCount" | "index";
 /**
@@ -32,10 +32,10 @@ type ShamirParameter = "threshold" | "shareCount" | "index";
  * narrows to `{ parameter, value }`.
  */
 type ShamirErrorDetails = {
-  /** One of the reference's seven codes; no payload. */
+  /** One of the reference's eight codes; no payload. */
   readonly code: Exclude<ShamirErrorCode, "InvalidParameter">;
 } | {
-  /** A `number` argument outside the integer domain the reference's type implies. */
+  /** A `number` argument outside the supported non-negative safe integer domain. */
   readonly code: "InvalidParameter";
   /** The argument. */
   readonly parameter: ShamirParameter;
@@ -77,6 +77,8 @@ export declare class ShamirError extends Error {
   static secretTooLong(): ShamirError;
   /** `shareCount` is above `MAX_SHARE_COUNT`. */
   static tooManyShares(): ShamirError;
+  /** Rust compatibility variant; current split and recovery paths do not produce it. */
+  static interpolationFailure(): ShamirError;
   /** The recovered digest does not match: wrong, missing, or corrupted shares. */
   static checksumFailure(): ShamirError;
   /** The secret is shorter than `MIN_SECRET_LENGTH`. */
@@ -101,7 +103,7 @@ export declare class ShamirError extends Error {
  * be a view when the share comes from elsewhere.
  */
 interface ShamirShare {
-  /** The x-coordinate, an integer in `[0, 255]`; `splitSecret` assigns `0..shareCount-1`. */
+  /** The x-coordinate, a non-negative safe integer, truncated to eight bits during recovery; `splitSecret` assigns `0..shareCount-1`. */
   readonly index: number;
   /** The y-bytes; every share of one split has the secret's length. */
   readonly data: Uint8Array;
@@ -131,10 +133,10 @@ export declare function splitSecret(secret: Uint8Array, options: SplitOptions): 
 /**
  * Recover the secret from `shares`; their count is the threshold.
  *
- * @throws {ShamirError} `InvalidThreshold` for no shares or more than
+ * @throws {ShamirError} `InvalidThreshold` for no shares, `TooManyShares` above
  * {@link MAX_SHARE_COUNT}, the length codes for malformed share data,
- * `SharesUnequalLength`, `InvalidParameter` for an `index` that is not an
- * integer in `[0, 255]`, and `ChecksumFailure` when the shares do not
+ * `SharesUnequalLength`, `InvalidParameter` for an `index` that is not a
+ * non-negative safe integer, and `ChecksumFailure` when the shares do not
  * belong together or have been altered. Indexes 254 and 255 and duplicates
  * are left to the checksum, as the reference leaves them.
  */
