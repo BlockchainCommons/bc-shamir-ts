@@ -19,61 +19,65 @@ differs from the Rust reference. It has three kinds of entry:
 
 ## 1. True behavioral divergences
 
-- **D1 — a share index outside `u8`.** `recover_secret` takes `usize`
-  indexes. When the threshold is 2 or more it narrows them with `as u8`,
-  so `256` recovers as index `0` and `65536` likewise; when the threshold
-  is 1 it returns the single share **without reading the indexes at all**,
-  so any label is accepted. TypeScript validates every `index` as an
-  integer in `[0, 255]` before either path and rejects the rest with
-  `ShamirError` `InvalidParameter`. Executed side by side (fixture seed,
-  16-byte secret, 3-of-5 split):
+- **D1 — an integer above `2⁵³ − 1`.** The reference's `usize` parameters
+  (`threshold`, `share_count`, the recovery indexes) reach `2⁶⁴ − 1` on a
+  64-bit target; TypeScript's `number` is exact only up to
+  `Number.MAX_SAFE_INTEGER` (`2⁵³ − 1`), and the port validates all three
+  parameters against that bound before anything else, rejecting the rest
+  with `ShamirError` `InvalidParameter`. An integer such as `2⁵³` is
+  representable but not safe, so it is a genuine difference, not a
+  JS-only input. Executed side by side (fixture seed, 16-byte secret,
+  3-of-5 split):
 
-  | call | Rust | TypeScript |
+  | call | Rust (64-bit) | TypeScript |
   |---|---|---|
-  | recover `[256, 1, 2]` (256 ≡ 0 as `u8`) | the secret | `InvalidParameter` |
-  | recover `[300]` with a threshold of 1 | share 0's bytes (index unread) | `InvalidParameter` |
-  | recover `[0, 1, 2]` | the secret | the secret |
-  | recover `[254, 1, 2]`, `[255, 1, 2]`, `[0, 0, 2]` | `ChecksumFailure` | `ChecksumFailure` |
+  | split `threshold 1, shareCount 2⁵³` | `TooManyShares` | `InvalidParameter` |
+  | split `threshold 2⁵³, shareCount 1` | `InvalidThreshold` | `InvalidParameter` |
+  | recover `[2⁵³, 1, 2]` (2⁵³ ≡ 0 as `u8`) | the secret | `InvalidParameter` |
+  | recover `[2⁵³]` with a threshold of 1 | share 0's bytes (index unread) | `InvalidParameter` |
+  | recover `[2⁵³ − 1, 1, 2]` (≡ 255 as `u8`) | `ChecksumFailure` | `ChecksumFailure` |
 
-  A wire index is a `u8` (SSKR's member index is four bits), and `256`
-  silently aliasing `0` means a caller's bookkeeping error "recovers"
-  with the wrong share identity — the class of fault the check exists to
-  catch. The TypeScript contract is the `u8` domain. Three golden vectors
-  carry the divergence (`labels=[256,1,2]`, `labels=[65536,1,2]` on a
-  3-of-5 recover; `labels=[300]` on a 1-of-3 recover) and the harness
-  allowlists them as D1. **Upstream fix:** `recover_secret(&[u8], …)`, or
-  a bounds check before the narrowing.
+  A `number` above `2⁵³` may already have been rounded before the call, so
+  accepting it would accept labels the caller never wrote; exact coverage
+  of the reference's domain needs a `bigint` path, which is not introduced.
+  The TypeScript contract is the safe-integer domain. No golden vector
+  carries the divergence: the corpus stays inside the safe range.
 
-Everything else — all 735 wire vectors, including the error variant of
+Everything else — all 737 wire vectors, including the error variant of
 every failing recipe — replays exactly against `bc-shamir 0.13.0` through
 `tests/rust-validation` (`cargo run --release -- ../vectors/vectors.json`):
-**748 vectors — 734 match, 3 expected divergence (D1), 11 js-only, 0
-mismatch** (2026-09-12).
+**748 vectors — 737 match, 11 js-only, 0 mismatch** (2026-09-12). The
+harness has no divergence allowance: every input the reference can
+receive must match.
 
 ## 2. JS-only input domain
 
-Inputs the reference's `usize`/`u8` parameters cannot receive. Every one
-is a `ShamirError` `InvalidParameter` naming the parameter, with the
-message `"<parameter> must be an integer in [<min>, <max>], got <value>"`;
-the Rust harness counts their vectors as `js-only`.
+Inputs the reference's `usize` parameters cannot receive. Every one is a
+`ShamirError` `InvalidParameter` naming the parameter, with the message
+`"<parameter> must be an integer in [<min>, <max>], got <value>"`; the Rust
+harness counts their vectors as `js-only`.
 
-- **`threshold`, `shareCount`** that are not safe non-negative integers
-  (`NaN`, `1.5`, `Infinity`, `-1`, …). They are checked *before* the
-  reference's five checks, so every integer the reference could receive
-  still gets the reference's code in the reference's order (`17` is
-  `TooManyShares`, `0` is `InvalidThreshold`, `threshold 2, shareCount 1`
-  is `InvalidThreshold`). Before this validation the port returned **zero
-  shares** for `shareCount: NaN` and leaked a `TypeError` for fractions.
-- **Share `index`** that is not an integer in `[0, 255]` (`-1`, `1.5`,
-  `NaN`; `≥ 256` is D1 above). The index check runs *after* the
-  reference's validators (`InvalidThreshold`, the secret-length codes,
-  `SharesUnequalLength`), so a share set the reference rejects gets the
-  reference's code here too. Indexes 254 and 255 and duplicates are *not*
+- **`threshold`, `shareCount`** that are not non-negative integers (`NaN`,
+  `1.5`, `Infinity`, `-1`, …). They are checked *before* the reference's
+  five checks, so every integer the reference could receive (up to the
+  safe-integer bound, D1) still gets the reference's code in the
+  reference's order (`17` is `TooManyShares`, `0` is `InvalidThreshold`,
+  `threshold 2, shareCount 1` is `InvalidThreshold`). Before this
+  validation the port returned **zero shares** for `shareCount: NaN` and
+  leaked a `TypeError` for fractions.
+- **Share `index`** that is not a non-negative integer (`-1`, `1.5`,
+  `NaN`). The index check runs *after* the reference's validators
+  (`InvalidThreshold`, the secret-length codes, `SharesUnequalLength`), so
+  a share set the reference rejects gets the reference's code here too.
+  An integer label at or above `256` is **not** rejected: as in the
+  reference (`as u8`), it is narrowed to eight bits for interpolation, so
+  `256` recovers as index `0` and `65536` likewise; with a threshold of 1
+  the single share is returned without reading its label at all (`[300]`
+  returns the share). Executed on both sides; the golden vectors
+  `labels=[256,1,2]`, `labels=[65536,1,2]` (3-of-5) and `labels=[300]`
+  (1-of-3) replay identically. Indexes 254 and 255 and duplicates are *not*
   validated: the reference lets the checksum reject them, and so does the
   port (executed: `ChecksumFailure` on both sides).
-- **`InterpolationFailure`.** Rust's `Error` enum keeps the variant;
-  neither implementation can produce it. Dropped from the TypeScript code
-  union (surface-only difference).
 
 ## 3. Mapping equivalences
 
@@ -81,9 +85,16 @@ the Rust harness counts their vectors as `js-only`.
   On checksum failure the port zeroes the interpolated secret before
   throwing; the reference returns `Err` and drops the `Vec` un-zeroed.
   Both zero `digest`, `x`, `y` in split and `digest`, `verify` in recover.
+  The port also zeroes its whole interpolation arena (including the
+  Lagrange-basis workspace) on return, where the reference zeroes selected
+  buffers; neither changes a returned byte or an error code.
 - **Error shape.** `Error::X` ↔ `ShamirError` with `code: "X"`,
   `details: { code }`, `is(code)`; the reference's `Display` strings are
-  the messages. `InvalidParameter` carries `details: { parameter, value }`.
+  the messages. All eight variants are present, including
+  `InterpolationFailure` (`interpolation failed`,
+  `ShamirError.interpolationFailure()`), which neither implementation
+  produces from its split or recovery paths. `InvalidParameter` carries
+  `details: { parameter, value }`.
 - **Immutability.** The `{ index, data }` share objects `splitSecret`
   returns are frozen (the `data` buffer stays writable, as a `Vec<u8>`
   would be).
@@ -103,6 +114,8 @@ the Rust harness counts their vectors as `js-only`.
   xoshiro state (`fill_random_data` ↔ `fillBytes`, one 64-bit step per
   byte), and the crate tests' counter generator (0, 17, 34, …) is
   reproduced as "fake". A threshold of 1 draws nothing on either side.
+  Without an `rng` the port defaults to Web Crypto; the reference requires
+  a caller-provided generator.
 
 ## Maintenance
 
