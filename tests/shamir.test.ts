@@ -32,7 +32,7 @@ function fakeRng(): RandomNumberGenerator {
 const hexToBytes = (hex: string): Uint8Array => Uint8Array.from(Buffer.from(hex, "hex"));
 const bytesToHex = (b: Uint8Array): string => Buffer.from(b).toString("hex");
 const pick = (shares: ShamirShare[], indexes: number[]): ShamirShare[] =>
-  indexes.map((i) => shares[i]!);
+  indexes.map((i) => shares[i]);
 
 describe("constants", () => {
   it("match the reference", () => {
@@ -77,7 +77,7 @@ describe("splitSecret", () => {
     expect(bytesToHex(recoverSecret(pick(shares, [0, 2])))).toBe(bytesToHex(secret));
     // Two splits with the secure generator differ.
     const again = splitSecret(secret, { threshold: 2, shareCount: 3 });
-    expect(bytesToHex(again[0]!.data)).not.toBe(bytesToHex(shares[0]!.data));
+    expect(bytesToHex(again[0].data)).not.toBe(bytesToHex(shares[0].data));
   });
 
   it("threshold 1 returns copies of the secret and draws no randomness", () => {
@@ -89,7 +89,7 @@ describe("splitSecret", () => {
     const shares = splitSecret(secret, { threshold: 1, shareCount: 5, rng });
     expect(shares.length).toBe(5);
     for (const s of shares) expect(bytesToHex(s.data)).toBe(bytesToHex(secret));
-    expect(bytesToHex(recoverSecret([shares[2]!]))).toBe(bytesToHex(secret));
+    expect(bytesToHex(recoverSecret([shares[2]]))).toBe(bytesToHex(secret));
   });
 });
 
@@ -203,26 +203,53 @@ describe("errors", () => {
       "TooManyShares",
     );
   });
-  it("InvalidParameter for a share index outside [0, 255]; 254 and duplicates go to the checksum", () => {
+  it("InvalidParameter for a share index outside the safe non-negative integer domain; 254 and duplicates go to the checksum", () => {
     const shares = splitSecret(hexToBytes("0ff784df000c4380a5ed683f7e6e3dcf"), {
       threshold: 3,
       shareCount: 5,
       rng: fakeRng(),
     });
-    const relabel = (index: number) => [{ index, data: shares[0]!.data }, shares[1]!, shares[2]!];
-    expect(code(() => recoverSecret(relabel(256)))).toBe("InvalidParameter");
+    const relabel = (index: number) => [{ index, data: shares[0].data }, shares[1], shares[2]];
+    for (const index of [256, 65536, 2 ** 32, Number.MAX_SAFE_INTEGER - 255]) {
+      expect(recoverSecret(relabel(index))).toEqual(recoverSecret(relabel(0)));
+    }
     expect(code(() => recoverSecret(relabel(-1)))).toBe("InvalidParameter");
     expect(code(() => recoverSecret(relabel(1.5)))).toBe("InvalidParameter");
     expect(code(() => recoverSecret(relabel(NaN)))).toBe("InvalidParameter");
-    expect(() => recoverSecret(relabel(256))).toThrow(
-      "index must be an integer in [0, 255], got 256",
+    expect(() => recoverSecret(relabel(-1))).toThrow(
+      `index must be an integer in [0, ${Number.MAX_SAFE_INTEGER}], got -1`,
     );
     expect(code(() => recoverSecret(relabel(254)))).toBe("ChecksumFailure");
-    expect(code(() => recoverSecret([shares[0]!, shares[0]!, shares[2]!]))).toBe("ChecksumFailure");
+    expect(code(() => recoverSecret([shares[0], shares[0], shares[2]]))).toBe("ChecksumFailure");
     // Length checks still come first.
     expect(code(() => recoverSecret([{ index: 256, data: new Uint8Array(8) }]))).toBe(
       "SecretTooShort",
     );
+  });
+  it("single-share recovery ignores supported labels and returns a copy", () => {
+    const data = new Uint8Array(16);
+    for (const index of [0, 255, 256, 300, Number.MAX_SAFE_INTEGER]) {
+      const recovered = recoverSecret([{ index, data }]);
+      expect(recovered).toEqual(data);
+      expect(recovered).not.toBe(data);
+    }
+    for (const index of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(code(() => recoverSecret([{ index, data }]))).toBe("InvalidParameter");
+    }
+    expect(
+      code(() =>
+        recoverSecret([
+          { index: -1, data },
+          { index: 1, data: new Uint8Array(18) },
+        ]),
+      ),
+    ).toBe("SharesUnequalLength");
+  });
+  it("retains Rust's interpolation error variant", () => {
+    const error = ShamirError.interpolationFailure();
+    expect(error.message).toBe("interpolation failed");
+    expect(error.is("InterpolationFailure")).toBe(true);
+    expect(error.details).toEqual({ code: "InterpolationFailure" });
   });
   it("details, is(), and a cross-copy guard", () => {
     const e = ShamirError.invalidParameter("index", 300, { min: 0, max: 255 });
@@ -243,7 +270,7 @@ describe("errors", () => {
     for (const threshold of [1, 2]) {
       const s = splitSecret(secret, { threshold, shareCount: 3, rng: fakeRng() });
       expect(Object.isFrozen(s[0])).toBe(true);
-      expect(s[0]!.data.buffer).not.toBe(secret.buffer);
+      expect(s[0].data.buffer).not.toBe(secret.buffer);
       expect(() => {
         (s[0] as { index: number }).index = 9;
       }).toThrow(TypeError);
@@ -252,7 +279,7 @@ describe("errors", () => {
   it("checksum failure on a zeroed share", () => {
     const secret = hexToBytes("0ff784df000c4380a5ed683f7e6e3dcf");
     const shares = splitSecret(secret, { threshold: 3, shareCount: 5, rng: fakeRng() });
-    const bad = [shares[0]!, shares[1]!, { index: 2, data: new Uint8Array(16) }];
+    const bad = [shares[0], shares[1], { index: 2, data: new Uint8Array(16) }];
     expect(code(() => recoverSecret(bad))).toBe("ChecksumFailure");
     expect(() => recoverSecret(bad)).toThrow("checksum failure");
   });

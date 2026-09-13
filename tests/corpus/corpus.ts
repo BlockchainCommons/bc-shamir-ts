@@ -60,10 +60,10 @@ function* splits(): Generator<Recipe> {
 }
 function* recovers(): Generator<Recipe> {
   const bases: SplitSpec[] = [
-    { t: 2, n: 5, secret: cyc(16, 0x30), rng: SEEDS[0]! },
-    { t: 3, n: 7, secret: cyc(32, 0x40), rng: SEEDS[1]! },
-    { t: 1, n: 3, secret: cyc(18, 0x50), rng: SEEDS[2]! },
-    { t: 16, n: 16, secret: cyc(20, 0x60), rng: SEEDS[3]! },
+    { t: 2, n: 5, secret: cyc(16, 0x30), rng: SEEDS[0] },
+    { t: 3, n: 7, secret: cyc(32, 0x40), rng: SEEDS[1] },
+    { t: 1, n: 3, secret: cyc(18, 0x50), rng: SEEDS[2] },
+    { t: 16, n: 16, secret: cyc(20, 0x60), rng: SEEDS[3] },
   ];
   for (const from of bases) {
     if (num(from.n) === 16) {
@@ -135,7 +135,7 @@ function* recovers(): Generator<Recipe> {
   };
 }
 function* invalid(): Generator<Recipe> {
-  const rng = SEEDS[0]!;
+  const rng = SEEDS[0];
   for (const [t, n, len] of [
     [2, 17, 16], // TooManyShares
     [0, 3, 16], // InvalidThreshold
@@ -154,14 +154,9 @@ function* invalid(): Generator<Recipe> {
     yield { k: "split", t, n, secret: cyc(len), rng };
 }
 
-/**
- * JS-only input domain: parameters the reference's `usize` cannot express
- * (B1, B2) and share index labels outside `u8` (B3). Every row throws
- * `InvalidParameter` (tombstone T1 in the differential, D1 in the Rust
- * harness for the labels the reference truncates).
- */
+/** Integer-domain rejection and Rust-compatible oversized index labels. */
 function* domain(): Generator<Recipe> {
-  const rng = SEEDS[0]!;
+  const rng = SEEDS[0];
   const secret = cyc(16, 1);
   const params: [Num, Num][] = [
     [1, "NaN"],
@@ -177,6 +172,8 @@ function* domain(): Generator<Recipe> {
   const from: SplitSpec = { t: 3, n: 5, secret, rng };
   for (const label of [256, 65536, -1, 1.5, "NaN"] as Num[])
     yield { k: "recover", from, indexes: [0, 1, 2], labels: [label, 1, 2] };
+  // Single-share recovery ignores supported index labels.
+  yield { k: "recover", from: { t: 1, n: 3, secret, rng }, indexes: [0], labels: [300] };
 }
 
 export const categories: Record<string, () => Generator<Recipe>> = {

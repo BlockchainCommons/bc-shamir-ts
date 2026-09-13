@@ -23,6 +23,7 @@ export class ShamirError extends Error {
     static checksumFailure(): ShamirError;
     readonly code: ShamirErrorCode;
     readonly details: ShamirErrorDetails;
+    static interpolationFailure(): ShamirError;
     static invalidParameter(parameter: ShamirParameter, value: number, bounds: {
         readonly min: number;
         readonly max: number;
@@ -39,7 +40,7 @@ export class ShamirError extends Error {
 }
 
 // @public
-export type ShamirErrorCode = "SecretTooLong" | "TooManyShares" | "ChecksumFailure" | "SecretTooShort" | "SecretNotEvenLen" | "InvalidThreshold" | "SharesUnequalLength" | "InvalidParameter";
+export type ShamirErrorCode = "SecretTooLong" | "TooManyShares" | "InterpolationFailure" | "ChecksumFailure" | "SecretTooShort" | "SecretNotEvenLen" | "InvalidThreshold" | "SharesUnequalLength" | "InvalidParameter";
 
 // @public
 export type ShamirErrorDetails = {

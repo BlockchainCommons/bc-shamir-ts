@@ -5,12 +5,13 @@
  */
 
 /**
- * Machine-readable discriminant for a {@link ShamirError}. Seven codes are
+ * Machine-readable discriminant for a {@link ShamirError}. Eight codes are
  * the reference's variant names; `InvalidParameter` is JS-only.
  */
 export type ShamirErrorCode =
   | "SecretTooLong"
   | "TooManyShares"
+  | "InterpolationFailure"
   | "ChecksumFailure"
   | "SecretTooShort"
   | "SecretNotEvenLen"
@@ -28,11 +29,11 @@ export type ShamirParameter = "threshold" | "shareCount" | "index";
  */
 export type ShamirErrorDetails =
   | {
-      /** One of the reference's seven codes; no payload. */
+      /** One of the reference's eight codes; no payload. */
       readonly code: Exclude<ShamirErrorCode, "InvalidParameter">;
     }
   | {
-      /** A `number` argument outside the integer domain the reference's type implies. */
+      /** A `number` argument outside the supported non-negative safe integer domain. */
       readonly code: "InvalidParameter";
       /** The argument. */
       readonly parameter: ShamirParameter;
@@ -43,6 +44,7 @@ export type ShamirErrorDetails =
 const MESSAGES: Record<Exclude<ShamirErrorCode, "InvalidParameter">, string> = {
   SecretTooLong: "secret is too long",
   TooManyShares: "too many shares",
+  InterpolationFailure: "interpolation failed",
   ChecksumFailure: "checksum failure",
   SecretTooShort: "secret is too short",
   SecretNotEvenLen: "secret is not of even length",
@@ -100,6 +102,10 @@ export class ShamirError extends Error {
   /** `shareCount` is above `MAX_SHARE_COUNT`. */
   static tooManyShares(): ShamirError {
     return new ShamirError(MESSAGES.TooManyShares, { code: "TooManyShares" });
+  }
+  /** Rust compatibility variant; current split and recovery paths do not produce it. */
+  static interpolationFailure(): ShamirError {
+    return new ShamirError(MESSAGES.InterpolationFailure, { code: "InterpolationFailure" });
   }
   /** The recovered digest does not match: wrong, missing, or corrupted shares. */
   static checksumFailure(): ShamirError {

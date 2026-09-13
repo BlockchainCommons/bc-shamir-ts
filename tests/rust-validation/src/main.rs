@@ -4,9 +4,7 @@
 //!
 //! A recipe whose `t`, `n` or an index label is not a `u64` (NaN, a
 //! fraction, a negative) has no Rust form: counted as `js-only`, never
-//! compared. Allowlist **D1**: an index label >= 256 is truncated by the
-//! reference (`as u8`) and rejected by TypeScript (`InvalidParameter`);
-//! consulted only when the outcomes differ.
+//! compared. Every representable corpus input must match; there is no divergence allowance.
 use bc_rand::{RandomNumberGenerator, SeededRandomNumberGenerator};
 use bc_shamir::{recover_secret, split_secret};
 use serde::Deserialize;
@@ -48,11 +46,6 @@ fn js_only(r: &serde_json::Value) -> bool {
     if !split_ok(&r["from"]) { return true; }
     if let Some(l) = r.get("labels") { return l.as_array().unwrap().iter().any(|x| !is_u64(x)); }
     false
-}
-/// D1: an index label the reference truncates (`>= 256`) and TypeScript rejects.
-fn d1(r: &serde_json::Value, rust: &str, ts: &str) -> bool {
-    let big_label = r.get("labels").map_or(false, |l| l.as_array().unwrap().iter().any(|x| x.as_u64().map_or(false, |v| v >= 256)));
-    big_label && ts == "throw:InvalidParameter" && !rust.starts_with("throw:")
 }
 fn split(spec: &serde_json::Value) -> Result<Vec<Vec<u8>>, bc_shamir::Error> {
     let t = spec["t"].as_u64().unwrap() as usize;
@@ -100,14 +93,13 @@ fn main() {
     let path = std::env::args().nth(1).expect("path");
     let file: File = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     assert_eq!(file.count, file.vectors.len());
-    let (mut ok, mut expected, mut js_only_n, mut mismatch) = (0, 0, 0, 0);
+    let (mut ok, mut js_only_n, mut mismatch) = (0, 0, 0);
     for v in &file.vectors {
         if js_only(&v.recipe) { js_only_n += 1; continue; }
         let got = run(&v.recipe);
         if got == v.expect { ok += 1; }
-        else if d1(&v.recipe, &got, &v.expect) { expected += 1; }
         else { mismatch += 1; eprintln!("MISMATCH {}\n  rust: {}\n  ts:   {}", v.name, got, v.expect); }
     }
-    println!("{} vectors - {ok} match, {expected} expected divergence (D1), {js_only_n} js-only, {mismatch} MISMATCH", file.vectors.len());
+    println!("{} vectors - {ok} match, {js_only_n} js-only, {mismatch} MISMATCH", file.vectors.len());
     std::process::exit(if mismatch == 0 { 0 } else { 1 });
 }

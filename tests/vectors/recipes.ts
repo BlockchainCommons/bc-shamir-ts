@@ -35,7 +35,7 @@ export type Recipe =
       from: SplitSpec;
       /** Positions into the split's shares; also their labels unless `labels` is given. */
       indexes: number[];
-      /** Index labels handed to recovery in place of `indexes` (JS-only domain rows). */
+      /** Index labels handed to recovery in place of `indexes` (truncation and domain checks). */
       labels?: Num[];
       corrupt?: Corruption;
     };
@@ -91,8 +91,8 @@ export function materialize(api: VectorApi, r: Recipe): Outcome {
         api.makeRng(r.from.rng),
       );
       indexes = r.labels ? r.labels.map(num) : r.indexes;
-      shares = r.indexes.map((i) => new Uint8Array(all[i]!));
-      if (r.corrupt) shares[r.corrupt.share]![r.corrupt.byte] ^= r.corrupt.mask;
+      shares = r.indexes.map((i) => new Uint8Array(all[i]));
+      if (r.corrupt) shares[r.corrupt.share][r.corrupt.byte] ^= r.corrupt.mask;
     }
     return hex(api.recover(indexes, shares));
   } catch (e) {
@@ -139,7 +139,7 @@ export function baselineAdapterFor(m: any, randBaseline: any): VectorApi {
   };
 }
 
-/** Redesigned surface (D1): `splitSecret(secret, { threshold, shareCount, rng })` → `ShamirShare[]`. */
+/** Redesigned surface: `splitSecret(secret, { threshold, shareCount, rng })` → `ShamirShare[]`. */
 export function redesignedAdapterFor(m: any, rand: any): VectorApi {
   const makeRng = (spec: RngSpec): RngLike => {
     if ("fake" in spec) return FAKE;

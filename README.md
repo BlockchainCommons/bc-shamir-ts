@@ -37,8 +37,8 @@ try {
   if (ShamirError.isShamirError(e)) console.log(e.code); // "ChecksumFailure"
 }
 
-// Every failure is a ShamirError with the reference's codes; branch with `is`.
-// Arguments outside their integer domain are rejected too, never truncated:
+// Validation and checksum failures throw ShamirError; branch with `is`.
+// Non-negative safe integers are required for counts and indexes.
 try {
   splitSecret(secret, { threshold: 2, shareCount: NaN });
 } catch (e) {
@@ -59,6 +59,7 @@ Runnable examples live in the [`examples/`](https://github.com/BlockchainCommons
 
 ### Version History
 
+- **1.0.0-beta.2 (September 12, 2026)** - Match Rust recovery for oversized safe integer indexes and restore `InterpolationFailure`.
 - **1.0.0-beta.1 (September 9, 2026)** - Initial beta implementation.
 
 ### Roadmap

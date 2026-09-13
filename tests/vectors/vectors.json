@@ -1,5 +1,5 @@
 {
- "count": 747,
+ "count": 748,
  "vectors": [
   {
    "name": "split 1/1 len=16 seed=172951",
@@ -18540,7 +18540,7 @@
      2
     ]
    },
-   "expect": "throw:InvalidParameter"
+   "expect": "0102030405060708090a0b0c0d0e0f10"
   },
   {
    "name": "recover 3/5 len=16 seed=172951 [0,1,2] labels=[65536,1,2]",
@@ -18573,7 +18573,7 @@
      2
     ]
    },
-   "expect": "throw:InvalidParameter"
+   "expect": "0102030405060708090a0b0c0d0e0f10"
   },
   {
    "name": "recover 3/5 len=16 seed=172951 [0,1,2] labels=[-1,1,2]",
@@ -18673,6 +18673,35 @@
     ]
    },
    "expect": "throw:InvalidParameter"
+  },
+  {
+   "name": "recover 1/3 len=16 seed=172951 [0] labels=[300]",
+   "recipe": {
+    "k": "recover",
+    "from": {
+     "t": 1,
+     "n": 3,
+     "secret": {
+      "cycle": 16,
+      "start": 1
+     },
+     "rng": {
+      "seed": [
+       "17295166580085024720",
+       "422929670265678780",
+       "5577237070365765850",
+       "7953171132032326923"
+      ]
+     }
+    },
+    "indexes": [
+     0
+    ],
+    "labels": [
+     300
+    ]
+   },
+   "expect": "0102030405060708090a0b0c0d0e0f10"
   }
  ]
 }

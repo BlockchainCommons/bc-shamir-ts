@@ -36,7 +36,7 @@ describe("shamir properties", () => {
           hex(
             api.recover(
               idx,
-              idx.map((i) => shares[i]!),
+              idx.map((i) => shares[i]),
             ),
           ) === hex(s)
         );
@@ -58,7 +58,7 @@ describe("shamir properties", () => {
               hex(
                 api.recover(
                   idx,
-                  idx.map((i) => shares[i]!),
+                  idx.map((i) => shares[i]),
                 ),
               ) !== hex(s)
             );
@@ -81,8 +81,8 @@ describe("shamir properties", () => {
         ([t, n], s, sd, pos, mask) => {
           const shares = api.split(t, n, s, rngOf(sd));
           const idx = Array.from({ length: t }, (_, i) => i);
-          const sub = idx.map((i) => new Uint8Array(shares[i]!));
-          sub[pos % t]![(pos >> 4) % s.length] ^= mask;
+          const sub = idx.map((i) => new Uint8Array(shares[i]));
+          sub[pos % t][(pos >> 4) % s.length] ^= mask;
           try {
             api.recover(idx, sub);
             return false;
@@ -96,11 +96,10 @@ describe("shamir properties", () => {
   });
   const secret16 = Uint8Array.from({ length: 16 }, (_, i) => i);
   const nonUsize = fc.oneof(
-    fc.constantFrom(NaN, Infinity, -Infinity),
+    fc.constantFrom(NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1),
     fc.double({ noInteger: true, noNaN: true }),
     fc.integer({ max: -1 }),
   );
-  const nonU8 = fc.oneof(nonUsize, fc.integer({ min: 256, max: 1_000_000 }));
   const invalidParameter = (f: () => unknown, parameter: string): boolean => {
     try {
       f();
@@ -137,12 +136,23 @@ describe("shamir properties", () => {
       rng: rand.SeededRng.forTesting(),
     });
     fc.assert(
-      fc.property(nonU8, (v) =>
+      fc.property(nonUsize, (v) =>
         invalidParameter(
-          () => src.recoverSecret([{ index: v, data: shares[0]!.data }, shares[1]!]),
+          () => src.recoverSecret([{ index: v, data: shares[0].data }, shares[1]]),
           "index",
         ),
       ),
+    );
+  });
+  it("adding multiples of 256 to share labels preserves recovery", () => {
+    fc.assert(
+      fc.property(secret, seed, fc.integer({ min: 0, max: 2 ** 45 - 1 }), (data, sd, multiple) => {
+        const shares = api.split(3, 5, data, rngOf(sd));
+        expect(
+          api.recover([multiple * 256, multiple * 256 + 1, multiple * 256 + 2], shares.slice(0, 3)),
+        ).toEqual(data);
+      }),
+      { numRuns: 150 },
     );
   });
   it("splitSecret never returns fewer than shareCount shares", () => {

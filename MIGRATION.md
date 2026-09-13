@@ -1,10 +1,6 @@
 # Migrating from `@bcts/shamir` to `@blockchaincommons/shamir`
 
-**Every share byte is unchanged.** Share values, index assignment, the RNG
-draw order and the checksum are byte-identical to `@bcts/shamir` and to the
-Rust reference `bc-shamir 0.13.0`; 734 golden vectors, a differential corpus
-of ~5 400 recipes against the frozen pre-redesign bundle, and a Rust
-cross-validation harness enforce that. What changed is the shape of the API.
+`@blockchaincommons/shamir` is the redesigned successor to `@bcts/shamir`.
 
 ## TL;DR checklist
 
@@ -18,7 +14,7 @@ cross-validation harness enforce that. What changed is the shape of the API.
 - [ ] `ShamirErrorType.X` / `error.type` → the string `"X"` / `error.code`;
       `ShamirResult` is gone. A new code, `InvalidParameter`, is thrown for
       a `threshold`, `shareCount` or share `index` outside its integer
-      domain (previously zero shares, a `TypeError`, or a truncated index).
+      domain (previously zero shares, a `TypeError`, or implicit coercion).
 - [ ] The share objects `splitSecret` returns are frozen; copy one before
       changing its `index`.
 - [ ] `MIN_SECRET_LEN` / `MAX_SECRET_LEN` → `MIN_SECRET_LENGTH` / `MAX_SECRET_LENGTH`.
@@ -48,7 +44,10 @@ reproducible splits.
 
 ## 3. Errors
 
-One class, `ShamirError`, with a `code` union:
+Library validation and checksum errors use `ShamirError` with a `code` union.
+Its eight Rust variants preserve their messages; `InvalidParameter` is an
+additional code for the TypeScript input contract. RNG and dependency failures
+can propagate separately:
 
 ```ts
 try {
@@ -64,18 +63,37 @@ try {
 | --- | --- |
 | `error.type === ShamirErrorType.ChecksumFailure` | `error.code === "ChecksumFailure"` |
 | `new ShamirError(ShamirErrorType.X)` | `ShamirError.x()` factories, e.g. `ShamirError.checksumFailure()` |
-| `ShamirErrorType.InterpolationFailure` | removed (unreachable in both implementations) |
+| `ShamirErrorType.InterpolationFailure` | `"InterpolationFailure"`; `ShamirError.interpolationFailure()` |
 | `ShamirResult<T>` | removed (`T`) |
-| `shareCount: NaN` → `[]`; `threshold: 1.5` → `TypeError`; `index: 256` → recovers as 0 | `ShamirError` `InvalidParameter` with `details: { parameter, value }` |
+| `shareCount: NaN` → `[]`; `threshold: 1.5` → `TypeError` | `ShamirError` `InvalidParameter` with `details: { parameter, value }` |
 | `e.type === X` | `e.code === "X"` or `e.is("X")`; `e.details.code` narrows the payload |
 
-Messages are unchanged. Validation order is unchanged: `TooManyShares`,
+The algorithmic validation order remains: `TooManyShares`,
 `InvalidThreshold`, `SecretTooLong`, `SecretTooShort`, `SecretNotEvenLen`,
 then `SharesUnequalLength` on recovery. The `InvalidParameter` integer
-checks run *before* that chain for `threshold` and `shareCount` (so every
-value the Rust reference could receive keeps its reference code) and after
-the length checks for each share `index` (an integer in `[0, 255]`;
-254, 255 and duplicates still fail the checksum, as in the reference).
+checks run before that chain for `threshold` and `shareCount`, and after
+length checks for share indexes. All three accept non-negative safe integers
+up to `Number.MAX_SAFE_INTEGER`, before applying the smaller share-count and
+threshold limits. This does not cover the full 64-bit Rust `usize` domain.
+For example, `2 ** 53` is exactly representable but fails the safe-integer
+contract: TypeScript throws `InvalidParameter` where Rust may recover a share or
+return `TooManyShares` / `InvalidThreshold`. The package retains this bound to
+avoid accepting labels rounded before the call. There is no bigint input API.
+
+### Changes from 1.0.0-beta.1 to 1.0.0-beta.2
+
+Recovery now accepts indexes above 255 within the supported integer domain.
+For two or more shares, indexes are reduced modulo 256, matching Rust's `as u8`:
+`256` and `65536` identify the same interpolation point as `0`. Single-share
+recovery accepts any supported index and returns a copy of the data. Calls that
+previously threw `InvalidParameter` for oversized safe integer labels can now
+succeed. If an application requires byte-sized labels, validate that constraint
+before calling recovery. Negative, fractional, non-finite, and unsafe integer
+indexes remain invalid, including for a single share.
+
+`InterpolationFailure` is restored to the error-code union. Add it to exhaustive
+switches and error-code records. Its factory uses the message `interpolation failed`;
+current split and recovery paths do not produce this error.
 
 ## 4. Renames
 
@@ -90,9 +108,19 @@ the length checks for each share `index` (an integer in `[0, 255]`;
 Node **22.12** and TypeScript **5.7**. The IIFE / global-script build is
 gone; use the ESM or CJS entry.
 
-## 6. What did not change
+## 6. Retained behavior
 
-- Share bytes, share indexes, the digest share (index 254) and secret
+- Generated share bytes and indexes, the digest share (index 254) and secret
   (index 255) layout, the four-byte HMAC-SHA-256 checksum, and the RNG
   draw order (`threshold − 2` whole shares, then `length − 4` bytes).
 - `threshold === 1` returns copies of the secret and draws no randomness.
+- Shares remain paired `{ index, data }` objects. The wrappers returned by split
+  are frozen; their byte buffers and the outer array remain mutable.
+- The package keeps its exception API, existing constant names, and optional
+  secure RNG default. No Result wrapper or constant aliases are added.
+- Recovery clears its candidate secret on checksum failure, and interpolation
+  clears its scratch arenas on normal return. This is best-effort cleanup,
+  with no guarantee that JavaScript runtime copies have been erased.
+
+See [RUST_DIVERGENCES.md](./RUST_DIVERGENCES.md) for the source comparison and
+reasons for retaining these choices.
