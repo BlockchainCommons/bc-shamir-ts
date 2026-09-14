@@ -60,14 +60,13 @@ Runnable examples live in the [`examples/`](https://github.com/BlockchainCommons
 
 ### Version History
 
-- **Unreleased** - `threshold`, `shareCount` and `index` accept `bigint`, covering the reference's whole `usize` domain; every argument is type-checked before anything else; draws go through `@blockchaincommons/rand`; the Rust harness runs in CI on the golden file and the full corpus.
+- **1.0.0-beta.3 (September 14, 2026)** - `threshold`, `shareCount` and `index` accept `bigint`, covering the reference's whole `usize` domain; every argument is type-checked before anything else; draws go through `@blockchaincommons/rand`.
 - **1.0.0-beta.2 (September 12, 2026)** - Match Rust recovery for oversized safe integer indexes and restore `InterpolationFailure`.
 - **1.0.0-beta.1 (September 9, 2026)** - Initial beta implementation.
 
 ### Roadmap
 
 - Continued testing and auditing on the path from beta to a stable **1.0.0** release.
-- Continued parity with the Rust reference implementation as it evolves (see [`RUST_DIVERGENCES.md`](./RUST_DIVERGENCES.md)).
 
 ### Dependencies
 

@@ -1,9 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.0.0-beta.3 - 2026-09-14
 
-Closes the remaining divergence from the reference, `bc-shamir` 0.13.0, and
-validates the JavaScript-only argument domain.
+Closes the remaining divergence from the reference, `bc-shamir` 0.13.0.
 
 ### Changed (breaking)
 
@@ -44,29 +43,6 @@ validates the JavaScript-only argument domain.
   `number` index) extends it, so existing callers are unchanged.
 - Each share's `index` and `data` are read once, before any check, and the
   secret's length once; validation and interpolation see the same values.
-
-### Validation
-
-- The Rust harness classifies every recipe integer instead of casting it: a
-  JSON number is compared only up to `2^53 − 1`, a `"<digits>n"` string is
-  compared as an exact `u64`, anything else is js-only or `unparsable` (a
-  failure, never a panic); it asserts a 64-bit `usize` and never unwraps a
-  vector field outside a vector. `bun run vectors:full` materialises the
-  whole corpus, and a committed `mismatch.json` proves a single flipped
-  nibble fails the run.
-- 35 new golden vectors: 25 for the integer domain (`bigint` split
-  parameters and labels up to `2^64 − 1`, unsafe numbers) and 10 for labels
-  254, 255 and 511 and for two consecutive splits from one generator.
-  Results: `783 vectors - 762 match, 21 js-only, 0 MISMATCH`; full corpus
-  `5271 vectors - 5250 match, 21 js-only, 0 MISMATCH`.
-- CI gains a `rust-validation` job that replays the golden file and the full
-  corpus against the pinned crates and checks the mismatch fixture.
-- Tests: exact-rendering rows for the `InvalidParameter` message, `bigint`
-  split and recovery rows mirroring the reference, argument-type rows and
-  properties (`fc.anything()` for every argument at thresholds 1 and 3),
-  getter spies proving single reads, and the generator contract
-  (`RandError` `InvalidGenerator`, unwrapped propagation, untouched at
-  threshold 1).
 
 ## 1.0.0-beta.2 - 2026-09-12
 
