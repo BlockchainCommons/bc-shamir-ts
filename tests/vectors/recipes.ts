@@ -2,17 +2,22 @@
  * Vector recipes: a recipe names an operation and its inputs; `materialize`
  * runs it through a `VectorApi` and returns one outcome string, so the same
  * recipe drives the golden file, the differential and the Rust harness.
- * Adapters bridge the pre- and post-redesign surfaces.
+ * Adapters bridge the frozen baseline surface and the current one.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export type Bytes = { hex: string } | { cycle: number; start?: number } | { text: string };
 /**
- * A JavaScript `number` that must survive JSON: `NaN` and the infinities
- * have no JSON form, so they travel as strings.
+ * A recipe integer. `NaN` and the infinities have no JSON form, so they
+ * travel as strings; a `bigint` travels as its decimal digits followed by
+ * `n`, which JSON keeps exact where a `number` above `2^53 - 1` would not be.
  */
-export type Num = number | "NaN" | "Infinity" | "-Infinity";
-export const num = (v: Num): number => (typeof v === "number" ? v : Number(v));
+export type Num = number | "NaN" | "Infinity" | "-Infinity" | `${bigint}n`;
+export const num = (v: Num): number | bigint => {
+  if (typeof v === "number") return v;
+  if (v.endsWith("n")) return BigInt(v.slice(0, -1));
+  return Number(v);
+};
 /** Seeded xoshiro state (four decimal u64 strings) or the counter "fake" generator (0, 17, 34, …). */
 export type RngSpec = { seed: [string, string, string, string] } | { fake: true };
 export interface SplitSpec {
@@ -27,15 +32,21 @@ export interface Corruption {
   byte: number;
   mask: number;
 }
+/** A second split drawn from the same generator after the first; its shares follow a `;`. */
+export interface SplitThen {
+  t: Num;
+  n: Num;
+  secret: Bytes;
+}
 export type Recipe =
-  | ({ k: "split" } & SplitSpec)
+  | ({ k: "split"; then?: SplitThen } & SplitSpec)
   | { k: "recover"; shares: { index: Num; data: Bytes }[] }
   | {
       k: "recover";
       from: SplitSpec;
       /** Positions into the split's shares; also their labels unless `labels` is given. */
       indexes: number[];
-      /** Index labels handed to recovery in place of `indexes` (truncation and domain checks). */
+      /** Index labels handed to recovery in place of `indexes` (narrowing and domain checks). */
       labels?: Num[];
       corrupt?: Corruption;
     };
@@ -45,8 +56,8 @@ export interface RngLike {
   fill(dest: Uint8Array): void;
 }
 export interface VectorApi {
-  split(t: number, n: number, secret: Uint8Array, rng: RngLike): Uint8Array[];
-  recover(indexes: number[], shares: Uint8Array[]): Uint8Array;
+  split(t: number | bigint, n: number | bigint, secret: Uint8Array, rng: RngLike): Uint8Array[];
+  recover(indexes: (number | bigint)[], shares: Uint8Array[]): Uint8Array;
   makeRng(spec: RngSpec): RngLike;
   /** The error's code/type, or undefined for a non-package error. */
   errorCode(e: unknown): string | undefined;
@@ -62,7 +73,9 @@ export const hex = (u: Uint8Array): string => Buffer.from(u).toString("hex");
 
 export function recipeName(r: Recipe): string {
   if (r.k === "split")
-    return `split ${r.t}/${r.n} len=${toBytes(r.secret).length} ${rngName(r.rng)}`;
+    return `split ${r.t}/${r.n} len=${toBytes(r.secret).length} ${rngName(r.rng)}${
+      r.then ? ` then ${r.then.t}/${r.then.n} len=${toBytes(r.then.secret).length}` : ""
+    }`;
   if ("shares" in r) return `recover [${r.shares.map((s) => s.index).join(",")}] explicit`;
   return `recover ${r.from.t}/${r.from.n} len=${toBytes(r.from.secret).length} ${rngName(r.from.rng)} [${r.indexes.join(",")}]${
     r.labels ? ` labels=[${r.labels.join(",")}]` : ""
@@ -73,12 +86,13 @@ const rngName = (r: RngSpec): string => ("fake" in r ? "fake" : `seed=${r.seed[0
 export function materialize(api: VectorApi, r: Recipe): Outcome {
   try {
     if (r.k === "split") {
-      return api
-        .split(num(r.t), num(r.n), toBytes(r.secret), api.makeRng(r.rng))
-        .map(hex)
-        .join(",");
+      const rng = api.makeRng(r.rng);
+      const shares = (t: Num, n: Num, secret: Bytes): string =>
+        api.split(num(t), num(n), toBytes(secret), rng).map(hex).join(",");
+      const first = shares(r.t, r.n, r.secret);
+      return r.then ? `${first};${shares(r.then.t, r.then.n, r.then.secret)}` : first;
     }
-    let indexes: number[];
+    let indexes: (number | bigint)[];
     let shares: Uint8Array[];
     if ("shares" in r) {
       indexes = r.shares.map((s) => num(s.index));
@@ -110,7 +124,7 @@ const FAKE: RngLike = {
   },
 };
 
-/** Pre-redesign surface: `splitSecret(t, n, secret, rng)` over the old rand (`fillRandomData`). */
+/** The frozen baseline surface: `splitSecret(t, n, secret, rng)` over the baseline rand (`fillRandomData`). */
 export function baselineAdapterFor(m: any, randBaseline: any): VectorApi {
   const wrap = (rng: RngLike) => ({
     fillRandomData: (d: Uint8Array) => rng.fill(d),
@@ -139,8 +153,8 @@ export function baselineAdapterFor(m: any, randBaseline: any): VectorApi {
   };
 }
 
-/** Redesigned surface: `splitSecret(secret, { threshold, shareCount, rng })` → `ShamirShare[]`. */
-export function redesignedAdapterFor(m: any, rand: any): VectorApi {
+/** The current surface: `splitSecret(secret, { threshold, shareCount, rng })` → `ShamirShare[]`. */
+export function currentAdapterFor(m: any, rand: any): VectorApi {
   const makeRng = (spec: RngSpec): RngLike => {
     if ("fake" in spec) return FAKE;
     const g = new rand.SeededRng(spec.seed.map(BigInt));
@@ -155,15 +169,6 @@ export function redesignedAdapterFor(m: any, rand: any): VectorApi {
       throw new Error("unused");
     },
   });
-  if (m.ShamirErrorType !== undefined) {
-    // Pre-Phase-3 surface on the redesigned rand.
-    return {
-      split: (t, n, secret, rng) => m.splitSecret(t, n, secret, wrap(rng)),
-      recover: (indexes, shares) => m.recoverSecret(indexes, shares),
-      makeRng,
-      errorCode: (e) => (e as any)?.type,
-    };
-  }
   return {
     split: (t, n, secret, rng) =>
       m

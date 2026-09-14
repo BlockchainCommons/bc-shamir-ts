@@ -5,8 +5,8 @@
     "": {
       "name": "@blockchaincommons/shamir",
       "dependencies": {
-        "@blockchaincommons/crypto": "^1.0.0-beta.2",
-        "@blockchaincommons/rand": "^1.0.0-beta.2",
+        "@blockchaincommons/crypto": "^1.0.0-beta.3",
+        "@blockchaincommons/rand": "^1.0.0-beta.3",
       },
       "devDependencies": {
         "@arethetypeswrong/cli": "^0.18.5",
@@ -47,9 +47,9 @@
 
     "@bcoe/v8-coverage": ["@bcoe/v8-coverage@1.0.2", "", {}, "sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA=="],
 
-    "@blockchaincommons/crypto": ["@blockchaincommons/crypto@1.0.0-beta.2", "", { "dependencies": { "@blockchaincommons/rand": "^1.0.0-beta.2", "@noble/ciphers": "^2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0" } }, "sha512-c4H2U+A181YyCUnBfHOt2H2KY+ysr4s+qADX3mKBATShz9BV8Yh8JwvUixIhy6Iys7Pp45evBCvJx/8UOULcIA=="],
+    "@blockchaincommons/crypto": ["@blockchaincommons/crypto@1.0.0-beta.3", "", { "dependencies": { "@blockchaincommons/rand": "^1.0.0-beta.3", "@noble/ciphers": "^2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0" } }, "sha512-Kd8D6naoW6PL+JnbjSChy0QXv/tST7k0Nj0J95leBdSKnmiFL4ukpEH63HW6oJnd7hY8jfqQdg7EBYs4MofowQ=="],
 
-    "@blockchaincommons/rand": ["@blockchaincommons/rand@1.0.0-beta.2", "", {}, "sha512-RCmCzePC4Ja3WQWebSm0kD0id7gkqhKbppmoLdNSAz17wQvsoZG/MWs/IcH4TYGYJ0UxX7b+qxwxpdq81ib4Yg=="],
+    "@blockchaincommons/rand": ["@blockchaincommons/rand@1.0.0-beta.3", "", {}, "sha512-SelWiTP+Ngb2y9ZOT5deyDmGFjkP0JxJxMN3GA1UOAiV05XtDgUPMPFreU3LQ9zBpAepFajE8t7IrCf2dDQRxA=="],
 
     "@braidai/lang": ["@braidai/lang@1.1.2", "", {}, "sha512-qBcknbBufNHlui137Hft8xauQMTZDKdophmLFv05r2eNmdIv/MlPuP4TdUknHG68UdWLgVZwgxVe735HzJNIwA=="],
 

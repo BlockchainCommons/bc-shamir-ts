@@ -3,7 +3,8 @@
  * with 1 ≤ t ≤ n ≤ 16, every even secret length in [16, 32], four seeds;
  * recovery from subsets (up to size 5) of a 2-of-5 and a 3-of-7 split, with
  * bit-flip corruptions; every invalid-parameter combination in validator
- * order. Pure and deterministic.
+ * order; the JS-only and bigint integer domains; consecutive splits from
+ * one generator. Pure and deterministic.
  */
 import {
   num,
@@ -66,24 +67,48 @@ function* recovers(): Generator<Recipe> {
     { t: 16, n: 16, secret: cyc(20, 0x60), rng: SEEDS[3] },
   ];
   for (const from of bases) {
-    if (num(from.n) === 16) {
+    if (Number(num(from.n)) === 16) {
       // 2^16 subsets is too many; singles, every 15-subset, and the full set.
       const all = Array.from({ length: 16 }, (_, i) => i);
       for (const i of all) yield { k: "recover", from, indexes: [i] };
       for (const i of all) yield { k: "recover", from, indexes: all.filter((j) => j !== i) };
       yield { k: "recover", from, indexes: all };
     } else {
-      for (const indexes of subsets(num(from.n), 5)) yield { k: "recover", from, indexes };
+      for (const indexes of subsets(Number(num(from.n)), 5)) yield { k: "recover", from, indexes };
     }
     // corruptions of a valid threshold subset
-    const idx = Array.from({ length: num(from.t) }, (_, i) => i);
+    const idx = Array.from({ length: Number(num(from.t)) }, (_, i) => i);
     for (const byte of [0, 1, 3, 4, 7, 15]) {
       for (const mask of [0x01, 0x80]) {
         yield { k: "recover", from, indexes: idx, corrupt: { share: 0, byte, mask } };
-        yield { k: "recover", from, indexes: idx, corrupt: { share: num(from.t) - 1, byte, mask } };
+        yield {
+          k: "recover",
+          from,
+          indexes: idx,
+          corrupt: { share: Number(num(from.t)) - 1, byte, mask },
+        };
       }
     }
   }
+  // Labels 254 and 255 name the digest and secret points: the checksum rejects them.
+  const labelled: SplitSpec = { t: 3, n: 5, secret: cyc(16, 1), rng: SEEDS[0] };
+  for (const labels of [
+    [254, 1, 2],
+    [255, 1, 2],
+    [0, 1, 254],
+    [0, 1, 255],
+  ])
+    yield { k: "recover", from: labelled, indexes: [0, 1, 2], labels };
+  // Share 0 of a 2-of-3 split paired with the secret itself at the secret's
+  // label (255; 511 narrows to it) recovers; at 254 the secret is not the digest.
+  for (const index of [255, 511, 254])
+    yield {
+      k: "recover",
+      shares: [
+        { index: 0, data: { hex: "f0187fe4a2c25ccce353ff82c42b0356" } },
+        { index, data: cyc(16, 1) },
+      ],
+    };
   // explicit-share cases (validation)
   yield { k: "recover", shares: [] };
   yield {
@@ -174,6 +199,69 @@ function* domain(): Generator<Recipe> {
     yield { k: "recover", from, indexes: [0, 1, 2], labels: [label, 1, 2] };
   // Single-share recovery ignores supported index labels.
   yield { k: "recover", from: { t: 1, n: 3, secret, rng }, indexes: [0], labels: [300] };
+  // A number past the safe range is rejected: a double there stands for
+  // several integers. The reference accepts the integer it denotes.
+  yield { k: "split", t: 1, n: 2 ** 53, secret, rng };
+  yield { k: "split", t: 2 ** 53, n: 1, secret, rng };
+  yield { k: "recover", from, indexes: [0, 1, 2], labels: [2 ** 53, 1, 2] };
+  yield { k: "recover", from, indexes: [0, 1, 2], labels: [2 ** 64, 1, 2] };
+  yield { k: "recover", from: { t: 1, n: 3, secret, rng }, indexes: [0], labels: [2 ** 53] };
+  yield { k: "recover", from: { t: 1, n: 3, secret, rng }, indexes: [0], labels: [2 ** 64] };
+}
+
+/**
+ * The bigint form of `threshold`, `shareCount` and `index`: exact over the
+ * whole 64-bit `usize` domain. Split compares in bigint, recovery narrows to
+ * eight bits as the reference's `as u8` does. Negative bigints and those at
+ * or above 2^64 are rejected.
+ */
+function* wide(): Generator<Recipe> {
+  const rng = SEEDS[0];
+  const secret = cyc(16, 1);
+  const params: [Num, Num][] = [
+    ["1n", "9007199254740992n"],
+    ["9007199254740992n", "1n"],
+    ["18446744073709551615n", "16n"],
+    ["1n", "18446744073709551615n"],
+    ["3n", "5n"],
+    [3, "5n"],
+    ["1n", "18446744073709551616n"],
+    ["-1n", 3],
+  ];
+  for (const [t, n] of params) yield { k: "split", t, n, secret, rng };
+  const from: SplitSpec = { t: 3, n: 5, secret, rng };
+  const labels: Num[][] = [
+    ["9007199254740992n", 1, 2],
+    ["9007199254740993n", 1, 2],
+    ["9007199254740994n", 1, 2],
+    ["18446744073709551615n", 1, 2],
+    ["18446744073709551360n", 1, 2],
+    ["256n", "1n", "2n"],
+    ["18446744073709551616n", 1, 2],
+    ["-1n", 1, 2],
+  ];
+  for (const l of labels) yield { k: "recover", from, indexes: [0, 1, 2], labels: l };
+  const single: SplitSpec = { t: 1, n: 3, secret, rng };
+  yield { k: "recover", from: single, indexes: [0], labels: ["18446744073709551615n"] };
+  yield { k: "recover", from: single, indexes: [0], labels: ["9007199254740992n"] };
+  // Share 0 of a 2-of-3 split whose second point is the secret itself, at
+  // the label 2^53 + 255 (255 as u8).
+  yield {
+    k: "recover",
+    shares: [
+      { index: 0, data: { hex: "f0187fe4a2c25ccce353ff82c42b0356" } },
+      { index: "9007199254741247n", data: secret },
+    ],
+  };
+}
+
+/** Two splits from one generator: the second's shares pin how much the first drew. */
+function* sequences(): Generator<Recipe> {
+  const rng = SEEDS[0];
+  const then = (t: number, n: number, secret: Bytes) => ({ t, n, secret });
+  yield { k: "split", t: 3, n: 5, secret: cyc(16, 0x20), rng, then: then(2, 3, cyc(18, 0x30)) };
+  yield { k: "split", t: 16, n: 16, secret: cyc(32, 0x20), rng, then: then(3, 5, cyc(16, 0x30)) };
+  yield { k: "split", t: 1, n: 4, secret: cyc(20, 0x20), rng, then: then(2, 3, cyc(16, 0x30)) };
 }
 
 export const categories: Record<string, () => Generator<Recipe>> = {
@@ -181,11 +269,19 @@ export const categories: Record<string, () => Generator<Recipe>> = {
   recovers,
   invalid,
   domain,
+  wide,
+  sequences,
 };
+/**
+ * Categories the frozen baseline cannot run: a bigint input makes it throw
+ * `TypeError` before any Shamir logic, so the differential skips them and
+ * only the Rust harness pins their outcomes.
+ */
+export const NO_BASELINE: Record<string, number> = { wide: 19 };
 export function* allRecipes(): Generator<Recipe> {
   for (const g of Object.values(categories)) yield* g();
 }
-/** Golden subset: one seed over every pair at lengths 16 and 32, all fake-rng splits, every recover and invalid case. */
+/** Golden subset: one seed over every pair at lengths 16 and 32, all fake-rng splits, and every other category whole. */
 export function* goldenRecipes(): Generator<Recipe> {
   for (const r of splits()) {
     if (r.k !== "split") continue;
@@ -200,4 +296,6 @@ export function* goldenRecipes(): Generator<Recipe> {
   yield* recovers();
   yield* invalid();
   yield* domain();
+  yield* wide();
+  yield* sequences();
 }

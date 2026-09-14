@@ -1,15 +1,14 @@
 /**
  * Golden snapshots: seeded splits for every (threshold, shareCount) at four
  * lengths, recovery from every t-subset for a sample, the error code for
- * every invalid parameter combination, and freeze entries for the JS-only
- * input domain.
+ * every invalid parameter combination, and the JS-only input domain.
  */
 import * as src from "../src";
 import * as rand from "@blockchaincommons/rand";
-import { materialize, redesignedAdapterFor, toBytes, hex, type Recipe } from "./vectors/recipes";
+import { materialize, currentAdapterFor, toBytes, hex, type Recipe } from "./vectors/recipes";
 import { SEEDS } from "./corpus/corpus";
 
-const api = redesignedAdapterFor(src, rand);
+const api = currentAdapterFor(src, rand);
 const run = (r: Recipe) => materialize(api, r);
 
 describe("golden: splits", () => {
@@ -83,10 +82,11 @@ describe("golden: recovery", () => {
 });
 
 /**
- * Integer validation rejects inputs outside the supported safe integer domain.
- * Valid oversized labels narrow like Rust's `as u8`: 256 becomes 0.
+ * The JS-only input domain: a `threshold`, `shareCount` or index that is not
+ * a usize (a safe-integer number or a bigint in [0, 2^64 - 1]) is rejected.
+ * A usize label above 255 narrows like Rust's `as u8`: 256 becomes 0.
  */
-describe("golden: freeze additions", () => {
+describe("golden: JS-only input domain", () => {
   const secret = toBytes({ cycle: 16, start: 1 });
   const rng = () => rand.SeededRng.forTesting();
   const outcome = (f: () => unknown): string => {
@@ -100,7 +100,7 @@ describe("golden: freeze additions", () => {
     }
   };
 
-  it("B1/B2: non-integer threshold and shareCount", () => {
+  it("non-integer threshold and shareCount", () => {
     const split = (threshold: number, shareCount: number) =>
       outcome(() => src.splitSecret(secret, { threshold, shareCount, rng: rng() }));
     expect([
@@ -114,12 +114,15 @@ describe("golden: freeze additions", () => {
     ]).toMatchSnapshot();
   });
 
-  it("B3: share indexes outside the u8 domain", () => {
+  it("share indexes outside the eight-bit domain", () => {
     const s = src.splitSecret(secret, { threshold: 3, shareCount: 5, rng: rng() });
-    const withIndex = (index: number) =>
+    const withIndex = (index: number | bigint) =>
       outcome(() => src.recoverSecret([{ index, data: s[0].data }, s[1], s[2]]));
     expect([
       `index 256 on share 0: ${withIndex(256)}`,
+      `index 256n on share 0: ${withIndex(256n)}`,
+      `index 2^64 - 1 on share 0: ${withIndex(2n ** 64n - 1n)}`,
+      `index 2^53 on share 0: ${withIndex(2 ** 53)}`,
       `index -1 on share 0: ${withIndex(-1)}`,
       `index 1.5 on share 0: ${withIndex(1.5)}`,
       `index NaN on share 0: ${withIndex(NaN)}`,
@@ -128,7 +131,7 @@ describe("golden: freeze additions", () => {
     ]).toMatchSnapshot();
   });
 
-  it("A3: share objects are frozen", () => {
+  it("share objects are frozen", () => {
     const s = src.splitSecret(secret, { threshold: 2, shareCount: 3, rng: rng() });
     const one = src.splitSecret(secret, { threshold: 1, shareCount: 2, rng: rng() });
     expect([

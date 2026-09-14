@@ -38,12 +38,13 @@ try {
 }
 
 // Validation and checksum failures throw ShamirError; branch with `is`.
-// Non-negative safe integers are required for counts and indexes.
+// Counts and indexes are safe-integer numbers, or bigints up to 2^64 - 1.
 try {
   splitSecret(secret, { threshold: 2, shareCount: NaN });
 } catch (e) {
   if (ShamirError.isShamirError(e) && e.is("InvalidParameter")) {
-    console.log(e.message); // "shareCount must be an integer in [0, 9007199254740991], got NaN"
+    console.log(e.message);
+    // "shareCount must be an integer in [0, 9007199254740991] or a bigint in [0, 18446744073709551615], got NaN"
   }
 }
 
@@ -59,6 +60,7 @@ Runnable examples live in the [`examples/`](https://github.com/BlockchainCommons
 
 ### Version History
 
+- **Unreleased** - `threshold`, `shareCount` and `index` accept `bigint`, covering the reference's whole `usize` domain; every argument is type-checked before anything else; draws go through `@blockchaincommons/rand`; the Rust harness runs in CI on the golden file and the full corpus.
 - **1.0.0-beta.2 (September 12, 2026)** - Match Rust recovery for oversized safe integer indexes and restore `InterpolationFailure`.
 - **1.0.0-beta.1 (September 9, 2026)** - Initial beta implementation.
 

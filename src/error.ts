@@ -19,8 +19,13 @@ export type ShamirErrorCode =
   | "SharesUnequalLength"
   | "InvalidParameter";
 
-/** The argument an `InvalidParameter` error names. */
-export type ShamirParameter = "threshold" | "shareCount" | "index";
+/**
+ * The argument an `InvalidParameter` error names: an integer parameter that
+ * is not a `usize`, or an argument of the wrong type (`options` and `share`
+ * must be objects, `secret` and `data` `Uint8Array`s, `shares` an array).
+ */
+export type ShamirParameter =
+  "threshold" | "shareCount" | "index" | "options" | "secret" | "shares" | "share" | "data";
 
 /**
  * The structured payload of a {@link ShamirError}, discriminated by `code`.
@@ -33,12 +38,12 @@ export type ShamirErrorDetails =
       readonly code: Exclude<ShamirErrorCode, "InvalidParameter">;
     }
   | {
-      /** A `number` argument outside the supported non-negative safe integer domain. */
+      /** An argument outside its domain: an integer that is not a `usize`, or a value of the wrong type. */
       readonly code: "InvalidParameter";
       /** The argument. */
       readonly parameter: ShamirParameter;
-      /** The value received. */
-      readonly value: number;
+      /** The value received, as passed. */
+      readonly value: unknown;
     };
 
 const MESSAGES: Record<Exclude<ShamirErrorCode, "InvalidParameter">, string> = {
@@ -52,11 +57,49 @@ const MESSAGES: Record<Exclude<ShamirErrorCode, "InvalidParameter">, string> = {
   SharesUnequalLength: "shares have unequal length",
 };
 
+/** What an integer parameter must be: the `usize` domain in its two TypeScript forms. */
+const USIZE_DOMAIN = "an integer in [0, 9007199254740991] or a bigint in [0, 18446744073709551615]";
+
+/** What each parameter must be. */
+const EXPECTATIONS: Record<ShamirParameter, string> = {
+  threshold: USIZE_DOMAIN,
+  shareCount: USIZE_DOMAIN,
+  index: USIZE_DOMAIN,
+  options: "an object",
+  share: "an object",
+  secret: "a Uint8Array",
+  data: "a Uint8Array",
+  shares: "an array",
+};
+
+/**
+ * The received value, rendered exactly: a `bigint` with its `n` suffix, an
+ * unsafe integer `number` by its exact digits (`String` would round them),
+ * a string quoted, and objects by their constructor name.
+ */
+function render(value: unknown): string {
+  if (typeof value === "bigint") return `${value}n`;
+  if (typeof value === "number") {
+    return Number.isInteger(value) && !Number.isSafeInteger(value)
+      ? BigInt(value).toString()
+      : String(value);
+  }
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "function") return "function";
+  if (Array.isArray(value)) return "Array";
+  if (typeof value === "object" && value !== null) {
+    const ctor = (value as { constructor?: { name?: unknown } }).constructor;
+    return typeof ctor?.name === "string" && ctor.name !== "" ? ctor.name : "object";
+  }
+  return String(value);
+}
+
 /**
  * Thrown for invalid split parameters, malformed share sets, a failed
- * recovery checksum, and (JS-only) a `threshold`, `shareCount` or share
- * `index` that is not an integer in its domain. Branch on `code`; messages
- * are the reference's strings.
+ * recovery checksum, and (JS-only) an argument outside its domain: a
+ * `threshold`, `shareCount` or share `index` that is not a `usize`, or an
+ * argument of the wrong type. Branch on `code`; messages are the
+ * reference's strings.
  *
  * Instances come from the static factories only.
  *
@@ -127,14 +170,15 @@ export class ShamirError extends Error {
   static sharesUnequalLength(): ShamirError {
     return new ShamirError(MESSAGES.SharesUnequalLength, { code: "SharesUnequalLength" });
   }
-  /** `parameter` is not an integer in `[min, max]`; `value` is what was received. */
-  static invalidParameter(
-    parameter: ShamirParameter,
-    value: number,
-    bounds: { readonly min: number; readonly max: number },
-  ): ShamirError {
+  /**
+   * `parameter` is outside its domain: an integer parameter that is not a
+   * `usize` (neither a safe non-negative integer `number` nor a `bigint` in
+   * `[0, 2^64 - 1]`), or an argument of the wrong type. `value` is what was
+   * received; the message renders it exactly.
+   */
+  static invalidParameter(parameter: ShamirParameter, value: unknown): ShamirError {
     return new ShamirError(
-      `${parameter} must be an integer in [${bounds.min}, ${bounds.max}], got ${String(value)}`,
+      `${parameter} must be ${EXPECTATIONS[parameter]}, got ${render(value)}`,
       { code: "InvalidParameter", parameter, value },
     );
   }

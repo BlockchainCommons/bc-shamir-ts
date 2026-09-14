@@ -1,31 +1,53 @@
 /**
- * Integer domains the reference's types imply.
+ * The argument domains the reference's types imply.
  *
- * TypeScript has no integer widths: `usize` is a `number` that must be a
- * safe non-negative integer, `u8` one in `[0, 255]`. A value outside its
- * domain is a `ShamirError` `InvalidParameter`.
+ * TypeScript has no 64-bit integer type. A `usize` arrives either as a
+ * `number`, which is exact only up to `Number.MAX_SAFE_INTEGER`, or as a
+ * `bigint`, which is exact over the whole `[0, 2^64 - 1]`. Anything else,
+ * including a `number` above the safe range (a double there stands for
+ * several integers), is a `ShamirError` `InvalidParameter`. Byte arguments
+ * must be `Uint8Array`s and share sets arrays of objects; those checks run
+ * before any reference check.
  *
  * @module domain
  */
 import { ShamirError, type ShamirParameter } from "./error.js";
 
-/** The inclusive bounds of an integer domain. */
-export interface Bounds {
-  readonly min: number;
-  readonly max: number;
+/** The reference's 64-bit `usize` maximum. */
+export const USIZE_MAX: bigint = 0xffff_ffff_ffff_ffffn;
+
+/**
+ * `value` as an exact `usize`: a safe non-negative integer `number`, or a
+ * `bigint` in `[0, USIZE_MAX]`; `undefined` for anything else.
+ */
+export function usizeOf(value: unknown): bigint | undefined {
+  if (typeof value === "bigint") return value >= 0n && value <= USIZE_MAX ? value : undefined;
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value >= 0 ? BigInt(value) : undefined;
+  }
+  return undefined;
 }
 
-/** `usize`: a safe non-negative integer. */
-export const USIZE: Bounds = { min: 0, max: Number.MAX_SAFE_INTEGER };
-/** `u8`: an eight-bit integer domain; recovery inputs use `USIZE`. */
-export const U8: Bounds = { min: 0, max: 0xff };
-
-/** `true` when `value` is an integer `number` within `bounds`. */
-export function isIntIn(value: number, bounds: Bounds): boolean {
-  return Number.isInteger(value) && value >= bounds.min && value <= bounds.max;
+/** Throws `InvalidParameter` unless `value` is a `usize`; returns it exactly. */
+export function expectUsize(parameter: ShamirParameter, value: unknown): bigint {
+  const usize = usizeOf(value);
+  if (usize === undefined) throw ShamirError.invalidParameter(parameter, value);
+  return usize;
 }
 
-/** Throws `InvalidParameter` unless `value` is an integer within `bounds`. */
-export function expectInt(parameter: ShamirParameter, value: number, bounds: Bounds): void {
-  if (!isIntIn(value, bounds)) throw ShamirError.invalidParameter(parameter, value, bounds);
+/** The reference's `as u8`: the low eight bits of a `usize`. */
+export const toU8 = (value: bigint): number => Number(BigInt.asUintN(8, value));
+
+/** `true` for a `Uint8Array`, including a `Buffer` and one from another realm. */
+export function isBytes(value: unknown): value is Uint8Array {
+  return (
+    value instanceof Uint8Array ||
+    (ArrayBuffer.isView(value) &&
+      (value as { constructor?: { name?: unknown } }).constructor?.name === "Uint8Array")
+  );
+}
+
+/** `true` for a non-null object (arrays included). */
+export function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
+  return typeof value === "object" && value !== null;
 }

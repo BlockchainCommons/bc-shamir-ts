@@ -6,9 +6,11 @@
  * {@link ShamirShare}s, any `threshold` of which {@link recoverSecret}
  * turns back. Validation and checksum failures throw {@link ShamirError}.
  * Its codes include the reference's eight variants and `InvalidParameter`
- * for a `threshold`, `shareCount` or share `index` outside the supported
- * non-negative safe integer domain. RNG and other dependency failures may
- * propagate separately.
+ * for a `threshold`, `shareCount` or share `index` that is not a `usize`
+ * (a safe non-negative integer `number`, or a `bigint` in `[0, 2^64 - 1]`)
+ * and for an argument of the wrong type. Randomness is drawn through
+ * `@blockchaincommons/rand`, so a generator's own error, including rand's
+ * `RandError` for a malformed generator, propagates unwrapped.
  *
  * @module @blockchaincommons/shamir
  */
@@ -19,4 +21,10 @@ export {
   type ShamirErrorDetails,
   type ShamirParameter,
 } from "./error.js";
-export { splitSecret, recoverSecret, type ShamirShare, type SplitOptions } from "./shamir.js";
+export {
+  splitSecret,
+  recoverSecret,
+  type ShamirShare,
+  type ShamirShareInput,
+  type SplitOptions,
+} from "./shamir.js";

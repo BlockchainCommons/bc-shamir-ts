@@ -6,9 +6,10 @@
 import fc from "fast-check";
 import * as src from "../src";
 import * as rand from "@blockchaincommons/rand";
-import { redesignedAdapterFor, hex } from "./vectors/recipes";
+import { isBytes, isRecord } from "../src/domain";
+import { currentAdapterFor, hex } from "./vectors/recipes";
 
-const api = redesignedAdapterFor(src, rand);
+const api = currentAdapterFor(src, rand);
 const seed = fc.tuple(
   fc.bigInt({ min: 1n, max: (1n << 64n) - 1n }),
   fc.bigInt({ min: 0n, max: (1n << 64n) - 1n }),
@@ -95,10 +96,19 @@ describe("shamir properties", () => {
     );
   });
   const secret16 = Uint8Array.from({ length: 16 }, (_, i) => i);
-  const nonUsize = fc.oneof(
-    fc.constantFrom(NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1),
+  const nonUsize: fc.Arbitrary<number | bigint> = fc.oneof(
+    fc.constantFrom<number | bigint>(
+      NaN,
+      Infinity,
+      -Infinity,
+      Number.MAX_SAFE_INTEGER + 1,
+      -1n,
+      2n ** 64n,
+    ),
     fc.double({ noInteger: true, noNaN: true }),
     fc.integer({ max: -1 }),
+    fc.bigInt({ min: 2n ** 64n }),
+    fc.bigInt({ max: -1n }),
   );
   const invalidParameter = (f: () => unknown, parameter: string): boolean => {
     try {
@@ -140,6 +150,80 @@ describe("shamir properties", () => {
         invalidParameter(
           () => src.recoverSecret([{ index: v, data: shares[0].data }, shares[1]]),
           "index",
+        ),
+      ),
+    );
+  });
+  it("any bigint label in [0, 2^64 - 1] recovers through its low eight bits", () => {
+    fc.assert(
+      fc.property(secret, seed, fc.bigInt({ min: 0n, max: 2n ** 56n - 1n }), (data, sd, k) => {
+        const shares = api.split(3, 5, data, rngOf(sd));
+        const base = k * 256n;
+        expect(api.recover([base, base + 1n, base + 2n], shares.slice(0, 3))).toEqual(data);
+      }),
+      { numRuns: 150 },
+    );
+  });
+  it("number and bigint labels agree over the safe range", () => {
+    fc.assert(
+      fc.property(secret, seed, fc.integer({ min: 0, max: 2 ** 45 - 1 }), (data, sd, k) => {
+        const shares = api.split(3, 5, data, rngOf(sd));
+        const asNumbers = [k * 256, k * 256 + 1, k * 256 + 2];
+        const asBigints = asNumbers.map(BigInt);
+        expect(api.recover(asBigints, shares.slice(0, 3))).toEqual(
+          api.recover(asNumbers, shares.slice(0, 3)),
+        );
+      }),
+      { numRuns: 100 },
+    );
+  });
+  it("any wrongly typed secret, data, shares or options is InvalidParameter naming it", () => {
+    const shares = src.splitSecret(secret16, {
+      threshold: 3,
+      shareCount: 3,
+      rng: rand.SeededRng.forTesting(),
+    });
+    const notBytes = fc.anything().filter((v) => !isBytes(v));
+    const notArray = fc.anything().filter((v) => !Array.isArray(v));
+    const notObject = fc.anything().filter((v) => !isRecord(v));
+    for (const threshold of [1, 3]) {
+      const rng = rand.SeededRng.forTesting();
+      fc.assert(
+        fc.property(notBytes, (v) =>
+          invalidParameter(
+            () => src.splitSecret(v as Uint8Array, { threshold, shareCount: 3, rng }),
+            "secret",
+          ),
+        ),
+      );
+      fc.assert(
+        fc.property(notBytes, (v) =>
+          invalidParameter(
+            () =>
+              src.recoverSecret([
+                { index: 0, data: v as Uint8Array },
+                ...shares.slice(1, threshold),
+              ]),
+            "data",
+          ),
+        ),
+      );
+    }
+    fc.assert(
+      fc.property(notArray, (v) =>
+        invalidParameter(() => src.recoverSecret(v as src.ShamirShareInput[]), "shares"),
+      ),
+    );
+    fc.assert(
+      fc.property(notObject, (v) =>
+        invalidParameter(() => src.splitSecret(secret16, v as src.SplitOptions), "options"),
+      ),
+    );
+    fc.assert(
+      fc.property(notObject, (v) =>
+        invalidParameter(
+          () => src.recoverSecret([v as src.ShamirShareInput, ...shares.slice(1)]),
+          "share",
         ),
       ),
     );

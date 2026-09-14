@@ -1,0 +1,26 @@
+{
+ "count": 1,
+ "vectors": [
+  {
+   "name": "split 2/3 len=16 seed=172951 (last nibble of share 2 flipped)",
+   "recipe": {
+    "k": "split",
+    "t": 2,
+    "n": 3,
+    "secret": {
+     "cycle": 16,
+     "start": 32
+    },
+    "rng": {
+     "seed": [
+      "17295166580085024720",
+      "422929670265678780",
+      "5577237070365765850",
+      "7953171132032326923"
+     ]
+    }
+   },
+   "expect": "edc4ff1dae295043efb8f3bcc8c00fa0,a2c66bc3f4b92fdf78fd17b1d622be96,73c0ccba1a12ae60da3220a6f41f76cd"
+  }
+ ]
+}
