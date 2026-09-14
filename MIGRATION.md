@@ -130,25 +130,3 @@ current split and recovery paths do not produce this error.
 | `MIN_SECRET_LEN` | `MIN_SECRET_LENGTH` |
 | `MAX_SECRET_LEN` | `MAX_SECRET_LENGTH` |
 | `MAX_SHARE_COUNT` | unchanged |
-
-## 5. Node and TypeScript floors
-
-Node **22.12** and TypeScript **5.7**. The IIFE / global-script build is
-gone; use the ESM or CJS entry.
-
-## 6. Retained behavior
-
-- Generated share bytes and indexes, the digest share (index 254) and secret
-  (index 255) layout, the four-byte HMAC-SHA-256 checksum, and the RNG
-  draw order (`threshold − 2` whole shares, then `length − 4` bytes).
-- `threshold === 1` returns copies of the secret and draws no randomness.
-- Shares remain paired `{ index, data }` objects. The wrappers returned by split
-  are frozen; their byte buffers and the outer array remain mutable.
-- The package keeps its exception API, existing constant names, and optional
-  secure RNG default. No Result wrapper or constant aliases are added.
-- Recovery clears its candidate secret on checksum failure, and interpolation
-  clears its scratch arenas on normal return. This is best-effort cleanup,
-  with no guarantee that JavaScript runtime copies have been erased.
-
-See [RUST_DIVERGENCES.md](./RUST_DIVERGENCES.md) for the source comparison and
-reasons for retaining these choices.

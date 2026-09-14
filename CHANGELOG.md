@@ -68,7 +68,7 @@ validates the JavaScript-only argument domain.
   (`RandError` `InvalidGenerator`, unwrapped propagation, untouched at
   threshold 1).
 
-## 1.0.0-beta.2
+## 1.0.0-beta.2 - 2026-09-12
 
 Rust compatibility, documentation, test, and release-tooling updates.
 
@@ -84,6 +84,6 @@ Rust compatibility, documentation, test, and release-tooling updates.
 - Close the oversized-safe-index recovery divergence and remove its Rust harness allowance.
   Cross-validation: 748 vectors, 737 matches, 11 JavaScript-only inputs, zero mismatches.
 
-## 1.0.0-beta.1
+## 1.0.0-beta.1 - 2026-09-09
 
 Initial beta implementation.
