@@ -1,14 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`golden: freeze additions > A3: share objects are frozen 1`] = `
-[
-  "threshold 2 share frozen: true",
-  "threshold 1 share frozen: true",
-  "share data is a fresh buffer: true",
-]
-`;
-
-exports[`golden: freeze additions > B1/B2: non-integer threshold and shareCount 1`] = `
+exports[`golden: JS-only input domain > non-integer threshold and shareCount 1`] = `
 [
   "threshold 1, shareCount NaN: throw:InvalidParameter",
   "threshold NaN, shareCount 3: throw:InvalidParameter",
@@ -20,14 +12,25 @@ exports[`golden: freeze additions > B1/B2: non-integer threshold and shareCount 
 ]
 `;
 
-exports[`golden: freeze additions > B3: share indexes outside the u8 domain 1`] = `
+exports[`golden: JS-only input domain > share indexes outside the eight-bit domain 1`] = `
 [
   "index 256 on share 0: recovered:0102030405060708090a0b0c0d0e0f10",
+  "index 256n on share 0: recovered:0102030405060708090a0b0c0d0e0f10",
+  "index 2^64 - 1 on share 0: throw:ChecksumFailure",
+  "index 2^53 on share 0: throw:InvalidParameter",
   "index -1 on share 0: throw:InvalidParameter",
   "index 1.5 on share 0: throw:InvalidParameter",
   "index NaN on share 0: throw:InvalidParameter",
   "index 254 on share 0: throw:ChecksumFailure",
   "duplicate index 0: throw:ChecksumFailure",
+]
+`;
+
+exports[`golden: JS-only input domain > share objects are frozen 1`] = `
+[
+  "threshold 2 share frozen: true",
+  "threshold 1 share frozen: true",
+  "share data is a fresh buffer: true",
 ]
 `;
 

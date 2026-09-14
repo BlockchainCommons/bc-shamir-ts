@@ -16,7 +16,7 @@ export const MAX_SHARE_COUNT = 16;
 export const MIN_SECRET_LENGTH = 16;
 
 // @public
-export function recoverSecret(shares: readonly ShamirShare[]): Uint8Array<ArrayBuffer>;
+export function recoverSecret(shares: readonly ShamirShareInput[]): Uint8Array<ArrayBuffer>;
 
 // @public
 export class ShamirError extends Error {
@@ -24,10 +24,7 @@ export class ShamirError extends Error {
     readonly code: ShamirErrorCode;
     readonly details: ShamirErrorDetails;
     static interpolationFailure(): ShamirError;
-    static invalidParameter(parameter: ShamirParameter, value: number, bounds: {
-        readonly min: number;
-        readonly max: number;
-    }): ShamirError;
+    static invalidParameter(parameter: ShamirParameter, value: unknown): ShamirError;
     static invalidThreshold(): ShamirError;
     is(code: ShamirErrorCode): boolean;
     static isShamirError(value: unknown): value is ShamirError;
@@ -48,22 +45,28 @@ export type ShamirErrorDetails = {
 } | {
     readonly code: "InvalidParameter";
     readonly parameter: ShamirParameter;
-    readonly value: number;
+    readonly value: unknown;
 };
 
 // @public
-export type ShamirParameter = "threshold" | "shareCount" | "index";
+export type ShamirParameter = "threshold" | "shareCount" | "index" | "options" | "secret" | "shares" | "share" | "data";
 
 // @public
-export interface ShamirShare {
+export interface ShamirShare extends ShamirShareInput {
     readonly data: Uint8Array;
     readonly index: number;
 }
 
 // @public
+export interface ShamirShareInput {
+    readonly data: Uint8Array;
+    readonly index: number | bigint;
+}
+
+// @public
 export interface SplitOptions extends RngOptions {
-    readonly shareCount: number;
-    readonly threshold: number;
+    readonly shareCount: number | bigint;
+    readonly threshold: number | bigint;
 }
 
 // @public

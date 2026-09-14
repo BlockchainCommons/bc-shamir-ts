@@ -1,6 +1,6 @@
 {
   "name": "@blockchaincommons/shamir",
-  "version": "1.0.0-beta.2",
+  "version": "1.0.0-beta.3",
   "type": "module",
   "sideEffects": false,
   "description": "Blockchain Commons Shamir Secret Sharing for TypeScript",
@@ -67,6 +67,7 @@
     "test:golden": "vitest run tests/golden-vectors.test.ts",
     "test:differential": "vitest run tests/differential.test.ts",
     "vectors:generate": "bun scripts/generate-vectors.ts",
+    "vectors:full": "bun scripts/generate-vectors.ts --full",
     "baseline:build": "bun scripts/build-baseline.ts"
   },
   "keywords": [
@@ -81,6 +82,10 @@
   "engines": {
     "node": ">=22.12"
   },
+  "dependencies": {
+    "@blockchaincommons/crypto": "^1.0.0-beta.3",
+    "@blockchaincommons/rand": "^1.0.0-beta.3"
+  },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@eslint/js": "^10.0.1",
@@ -90,6 +95,7 @@
     "@typescript-eslint/eslint-plugin": "^8.70.0",
     "@typescript-eslint/parser": "^8.70.0",
     "@vitest/coverage-v8": "^5.0.0",
+    "ajv": "^8.20.0",
     "eslint": "^10.10.0",
     "prettier": "3.9.6",
     "publint": "^0.3.24",
@@ -100,9 +106,5 @@
     "typescript6": "npm:typescript@^6.0.3",
     "vitest": "^5.0.0",
     "fast-check": "^4.9.0"
-  },
-  "dependencies": {
-    "@blockchaincommons/crypto": "^1.0.0-beta.2",
-    "@blockchaincommons/rand": "^1.0.0-beta.2"
   }
 }

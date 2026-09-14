@@ -4,9 +4,9 @@
  * @module shamir
  */
 import { hmacSha256, memzero, memzeroAll } from "@blockchaincommons/crypto";
-import { type RngOptions, secureRng } from "@blockchaincommons/rand";
+import { fillRandomBytes, type RngOptions } from "@blockchaincommons/rand";
 import { MAX_SECRET_LENGTH, MAX_SHARE_COUNT, MIN_SECRET_LENGTH } from "./constants.js";
-import { USIZE, expectInt } from "./domain.js";
+import { expectUsize, isBytes, isRecord, toU8 } from "./domain.js";
 import { ShamirError } from "./error.js";
 import { interpolate } from "./interpolate.js";
 
@@ -15,12 +15,27 @@ const SECRET_INDEX = 255;
 const DIGEST_INDEX = 254;
 
 /**
- * One share: its x-coordinate and the y-bytes. Both are wire. The objects
- * {@link splitSecret} returns are frozen; `data` is a fresh buffer that may
- * be a view when the share comes from elsewhere.
+ * A share handed to {@link recoverSecret}: its x-coordinate and the y-bytes.
+ * Both are wire.
  */
-export interface ShamirShare {
-  /** The x-coordinate, a non-negative safe integer, truncated to eight bits during recovery; `splitSecret` assigns `0..shareCount-1`. */
+export interface ShamirShareInput {
+  /**
+   * The x-coordinate: a safe non-negative integer `number`, or a `bigint` in
+   * `[0, 2^64 - 1]` for values a `number` cannot hold exactly. Recovery
+   * narrows it to its low eight bits, as the reference's `as u8` does, so
+   * `256` names the same point as `0`.
+   */
+  readonly index: number | bigint;
+  /** The y-bytes; every share of one split has the secret's length. */
+  readonly data: Uint8Array;
+}
+
+/**
+ * One share as {@link splitSecret} returns it: frozen, with a fresh `data`
+ * buffer and the `number` index `0..shareCount-1`.
+ */
+export interface ShamirShare extends ShamirShareInput {
+  /** The x-coordinate; `splitSecret` assigns `0..shareCount-1`. */
   readonly index: number;
   /** The y-bytes; every share of one split has the secret's length. */
   readonly data: Uint8Array;
@@ -28,10 +43,10 @@ export interface ShamirShare {
 
 /** Options for {@link splitSecret}; `rng` is rand's option, secure by default. */
 export interface SplitOptions extends RngOptions {
-  /** Shares needed to recover; `1 ≤ threshold ≤ shareCount`. */
-  readonly threshold: number;
-  /** Shares produced; at most {@link MAX_SHARE_COUNT}. */
-  readonly shareCount: number;
+  /** Shares needed to recover; `1 ≤ threshold ≤ shareCount`. A safe-integer `number` or a `bigint`. */
+  readonly threshold: number | bigint;
+  /** Shares produced; at most {@link MAX_SHARE_COUNT}. A safe-integer `number` or a `bigint`. */
+  readonly shareCount: number | bigint;
 }
 
 // The digest share's first four bytes: an HMAC of the secret keyed by the
@@ -40,16 +55,16 @@ function digestOf(randomTail: Uint8Array, secret: Uint8Array): Uint8Array {
   return hmacSha256(randomTail, secret);
 }
 
-// Check order is contractual; consumers branch on the first failure. The
-// integer checks enforce the supported non-negative safe integer domain.
-function validate(threshold: number, shareCount: number, secretLength: number): void {
-  expectInt("threshold", threshold, USIZE);
-  expectInt("shareCount", shareCount, USIZE);
-  if (shareCount > MAX_SHARE_COUNT) throw ShamirError.tooManyShares();
-  if (threshold < 1 || threshold > shareCount) throw ShamirError.invalidThreshold();
+// The reference's five checks, in its order; consumers branch on the first
+// failure. The comparisons are exact in bigint, so a value up to 2^64 - 1
+// gets the reference's code. Both counts are at most 16 on return.
+function validate(threshold: bigint, shareCount: bigint, secretLength: number): [number, number] {
+  if (shareCount > BigInt(MAX_SHARE_COUNT)) throw ShamirError.tooManyShares();
+  if (threshold < 1n || threshold > shareCount) throw ShamirError.invalidThreshold();
   if (secretLength > MAX_SECRET_LENGTH) throw ShamirError.secretTooLong();
   if (secretLength < MIN_SECRET_LENGTH) throw ShamirError.secretTooShort();
   if ((secretLength & 1) !== 0) throw ShamirError.secretNotEvenLen();
+  return [Number(threshold), Number(shareCount)];
 }
 
 /**
@@ -59,16 +74,26 @@ function validate(threshold: number, shareCount: number, secretLength: number): 
  * With `threshold` 1 every share is a copy of the secret and no randomness
  * is drawn. Otherwise `threshold - 2` shares are drawn whole from `rng`,
  * then `secret.length - 4` bytes for the digest share's tail; the remaining
- * shares are interpolated. That draw order is wire.
+ * shares are interpolated. That draw order is wire. Draws go through rand's
+ * `fillRandomBytes`, so rand's generator contract applies: a generator's own
+ * error propagates unwrapped, and one without a callable `fillBytes` fails at
+ * the first draw with rand's `RandError` `InvalidGenerator`.
  *
- * @throws {ShamirError} `InvalidParameter` when `threshold` or `shareCount`
- * is not a safe non-negative integer; then `TooManyShares`,
+ * @throws {ShamirError} `InvalidParameter` when `options` is not an object,
+ * when `threshold` or `shareCount` is not a `usize` (a safe non-negative
+ * integer `number` or a `bigint` in `[0, 2^64 - 1]`), or when `secret` is
+ * not a `Uint8Array`, in that order; then `TooManyShares`,
  * `InvalidThreshold`, `SecretTooLong`, `SecretTooShort`, `SecretNotEvenLen`,
  * checked in that order.
  */
 export function splitSecret(secret: Uint8Array, options: SplitOptions): ShamirShare[] {
-  const { threshold, shareCount } = options;
-  validate(threshold, shareCount, secret.length);
+  if (!isRecord(options)) throw ShamirError.invalidParameter("options", options);
+  const { threshold: thresholdInput, shareCount: shareCountInput, rng } = options;
+  const t = expectUsize("threshold", thresholdInput);
+  const n = expectUsize("shareCount", shareCountInput);
+  if (!isBytes(secret)) throw ShamirError.invalidParameter("secret", secret);
+  const length = secret.length;
+  const [threshold, shareCount] = validate(t, n, length);
 
   if (threshold === 1) {
     return Array.from({ length: shareCount }, (_, index) =>
@@ -76,34 +101,33 @@ export function splitSecret(secret: Uint8Array, options: SplitOptions): ShamirSh
     );
   }
 
-  const rng = options.rng ?? secureRng();
-  const length = secret.length;
+  const draw: RngOptions = { rng };
   const points = threshold; // threshold - 2 random shares + digest + secret
   const x = new Uint8Array(points);
   const y: Uint8Array[] = Array.from({ length: points }, () => new Uint8Array(length));
   const result: Uint8Array[] = Array.from({ length: shareCount }, () => new Uint8Array(length));
-  let n = 0;
+  let count = 0;
 
   for (let index = 0; index < threshold - 2; index++) {
-    rng.fillBytes(result[index]);
-    x[n] = index;
-    y[n].set(result[index]);
-    n++;
+    fillRandomBytes(result[index], draw);
+    x[count] = index;
+    y[count].set(result[index]);
+    count++;
   }
 
   const digest = new Uint8Array(length);
-  rng.fillBytes(digest.subarray(4));
+  fillRandomBytes(digest.subarray(4), draw);
   digest.set(digestOf(digest.subarray(4), secret).subarray(0, 4), 0);
-  x[n] = DIGEST_INDEX;
-  y[n].set(digest);
-  n++;
+  x[count] = DIGEST_INDEX;
+  y[count].set(digest);
+  count++;
 
-  x[n] = SECRET_INDEX;
-  y[n].set(secret);
-  n++;
+  x[count] = SECRET_INDEX;
+  y[count].set(secret);
+  count++;
 
   for (let index = threshold - 2; index < shareCount; index++) {
-    result[index].set(interpolate(n, x, length, y, index));
+    result[index].set(interpolate(count, x, length, y, index));
   }
 
   memzero(digest);
@@ -115,26 +139,43 @@ export function splitSecret(secret: Uint8Array, options: SplitOptions): ShamirSh
 /**
  * Recover the secret from `shares`; their count is the threshold.
  *
- * @throws {ShamirError} `InvalidThreshold` for no shares, `TooManyShares` above
+ * Each share's `index` and `data` are read once, before any check, and the
+ * snapshot is what validation and interpolation see.
+ *
+ * @throws {ShamirError} `InvalidParameter` when `shares` is not an array,
+ * a share is not an object, or its `data` is not a `Uint8Array`; then
+ * `InvalidThreshold` for no shares, `TooManyShares` above
  * {@link MAX_SHARE_COUNT}, the length codes for malformed share data,
  * `SharesUnequalLength`, `InvalidParameter` for an `index` that is not a
- * non-negative safe integer, and `ChecksumFailure` when the shares do not
- * belong together or have been altered. Indexes 254 and 255 and duplicates
- * are left to the checksum, as the reference leaves them.
+ * `usize` (a safe non-negative integer `number` or a `bigint` in
+ * `[0, 2^64 - 1]`), and `ChecksumFailure` when the shares do not belong
+ * together or have been altered. Indexes 254 and 255 and duplicates are
+ * left to the checksum, as the reference leaves them; an index above 255
+ * is narrowed to its low eight bits, and a single share's index is not read.
  */
-export function recoverSecret(shares: readonly ShamirShare[]): Uint8Array<ArrayBuffer> {
-  const threshold = shares.length;
+export function recoverSecret(shares: readonly ShamirShareInput[]): Uint8Array<ArrayBuffer> {
+  const input: unknown = shares;
+  if (!Array.isArray(input)) throw ShamirError.invalidParameter("shares", input);
+  const items: readonly unknown[] = input;
+  const snapshot = Array.from({ length: items.length }, (_, i) => {
+    const share = items[i];
+    if (!isRecord(share)) throw ShamirError.invalidParameter("share", share);
+    const { index, data } = share;
+    if (!isBytes(data)) throw ShamirError.invalidParameter("data", data);
+    return { index, data, length: data.length };
+  });
+
+  const threshold = snapshot.length;
   if (threshold === 0) throw ShamirError.invalidThreshold();
-  const first = shares[0];
-  const length = first.data.length;
-  validate(threshold, threshold, length);
-  if (!shares.every((s) => s.data.length === length)) throw ShamirError.sharesUnequalLength();
-  for (const s of shares) expectInt("index", s.index, USIZE);
+  const length = snapshot[0].length;
+  validate(BigInt(threshold), BigInt(threshold), length);
+  if (!snapshot.every((s) => s.length === length)) throw ShamirError.sharesUnequalLength();
+  const labels = snapshot.map((s) => expectUsize("index", s.index));
 
-  if (threshold === 1) return new Uint8Array(first.data);
+  if (threshold === 1) return new Uint8Array(snapshot[0].data);
 
-  const x = Uint8Array.from(shares, (s) => s.index);
-  const y = shares.map((s) => s.data);
+  const x = Uint8Array.from(labels, toU8);
+  const y = snapshot.map((s) => s.data);
   const digest = interpolate(threshold, x, length, y, DIGEST_INDEX);
   const secret = interpolate(threshold, x, length, y, SECRET_INDEX);
   const expected = digestOf(digest.subarray(4), secret);
